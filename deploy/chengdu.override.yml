@@ -9,6 +9,9 @@ services:
   frontend-admin:
     ports: !override ["59480:80"]
   api-admin:
+    build:
+      args:
+        GOPROXY: https://goproxy.cn,direct
     networks: [default, qwen]
     environment:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
@@ -16,6 +19,9 @@ services:
       CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
       LIPSYNC_ENGINE: latentsync
   api-live:
+    build:
+      args:
+        GOPROXY: https://goproxy.cn,direct
     networks: [default, qwen]
     environment:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
@@ -23,6 +29,9 @@ services:
       CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
       LIPSYNC_ENGINE: latentsync
   api-scheduler:
+    build:
+      args:
+        GOPROXY: https://goproxy.cn,direct
     environment:
       S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
 networks:

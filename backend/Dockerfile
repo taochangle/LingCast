@@ -4,6 +4,8 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /src
 
 ARG SERVICE=api-admin
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=$GOPROXY
 
 COPY go.mod go.sum ./
 
