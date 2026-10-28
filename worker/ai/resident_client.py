@@ -10,12 +10,17 @@ from pathlib import Path
 import time
 import uuid
 import tempfile
+import threading
+from collections import defaultdict
 
 import boto3
 from botocore.config import Config
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Warmup, manual narration and host preparation share each resident endpoint.
+_service_locks = defaultdict(threading.Lock)
 
 
 @dataclass
@@ -40,6 +45,10 @@ class ResidentRenderer:
                     Params={'Bucket':self.storage.bucket, 'Key':key}, ExpiresIn=900)
 
     def job(self, url, payload):
+        with _service_locks[url]:
+            return self._job(url, payload)
+
+    def _job(self, url, payload):
         for attempt in range(8):
             response = requests.post(url+'/v1/jobs', json=payload,
                 headers={'Authorization':'Bearer '+self.token}, timeout=(10,240))
