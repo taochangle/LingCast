@@ -11,7 +11,7 @@
     waiting=true;
     const batch=retry.slice(0,20);
     try {
-      const result=await chrome.runtime.sendMessage({type:'LC_EVENTS',revision,events:batch,dom:globalThis.LingCastDOM.status()});
+      const result=await chrome.runtime.sendMessage({type:'LC_EVENTS',revision,page_room:location.origin+location.pathname,events:batch,dom:globalThis.LingCastDOM.status()});
       if(result?.ok) { retry.splice(0,batch.length);lastSent=Date.now(); }
       if(result?.stop) stop();
     } catch { stop(); } finally { waiting=false; }

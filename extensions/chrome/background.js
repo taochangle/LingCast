@@ -24,7 +24,9 @@ async function handle(message,sender) {
  const current=await state();
  if(message.type==='LC_EVENTS') {
    if(!current?.active || sender.tab?.id!==current.tabId || sender.frameId!==0 || message.revision!==current.revision) return {ok:false,stop:true};
-   if(roomURL(sender.url)!==current.room) {await stop(current,'直播间已切换，请重新开始');return {ok:false,stop:true};}
+   let matchesRoom=false;
+   try {matchesRoom=roomURL(sender.url)===current.room && roomURL(message.page_room)===current.room;} catch {}
+   if(!matchesRoom) {await stop(current,'直播间已切换，请重新开始');return {ok:false,stop:true};}
    if(busy) return {ok:false};busy=true;
    try {
      const events=normalizeEvents(message.events,current.offset);
@@ -63,7 +65,7 @@ async function handle(message,sender) {
      await chrome.tabs.sendMessage(tab.id,{type:'LC_BEGIN',revision:active.revision});
    } catch(error) {await stop(active,'无法读取当前页面，请刷新后重新开始');throw error;}
    await chrome.storage.local.set({prefs:{server,token:config.token,welcome:config.welcome,reply:config.reply}});
-   await chrome.alarms.create('collector-heartbeat',{periodInMinutes:0.5});
+   await chrome.alarms.create('collector-heartbeat',{periodInMinutes:1});
    return {ok:true};
  }
  throw new Error('未知操作');

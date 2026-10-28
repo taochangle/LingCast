@@ -26,10 +26,10 @@ test('scoped transport survives worker idle state and rejects content reconfigur
  assert.equal(calls[0].body.url,'https://www.xiaohongshu.com/livestream/123');
  const blocked=await send({type:'LC_START',server:'http://evil.test',token:'stolen'},content);
  assert.equal(blocked.ok,false);
- const result=await send({type:'LC_EVENTS',revision:session.collector.revision,events:[{id:'event-1',kind:'message',nickname:'小雨',text:'你好',observed_ms:Date.now()}],server:'http://evil.test',dom:'listening'},content);
+ const result=await send({type:'LC_EVENTS',revision:session.collector.revision,page_room:content.url,events:[{id:'event-1',kind:'message',nickname:'小雨',text:'你好',observed_ms:Date.now()}],server:'http://evil.test',dom:'listening'},content);
  assert.equal(result.ok,true);
  assert.equal(calls.at(-1).url,'http://127.0.0.1:59480/api/collector/events');
- assert.equal((await send({type:'LC_EVENTS',revision:session.collector.revision,events:[]},{...content,tab:{id:9}})).stop,true);
+ assert.equal((await send({type:'LC_EVENTS',revision:session.collector.revision,page_room:content.url,events:[]},{...content,tab:{id:9}})).stop,true);
  assert.equal((await send({type:'LC_EVENTS',revision:session.collector.revision-1,events:[]},content)).stop,true);
  const status=await send({type:'LC_STATUS'});assert.equal(status.status.token,undefined);
  assert.equal((await send({type:'LC_STATUS'},content)).ok,false);
@@ -41,4 +41,10 @@ test('reload and close stop capture rather than silently replaying history',asyn
  assert.equal((await start()).ok,true);
  removed(1);await new Promise(resolve=>setTimeout(resolve,10));
  assert.equal(session.collector.active,false);
+});
+
+test('same-tab SPA room changes fail closed before upload',async()=>{
+ assert.equal((await start()).ok,true);
+ const result=await send({type:'LC_EVENTS',revision:session.collector.revision,page_room:'https://www.xiaohongshu.com/livestream/456',events:[]},content);
+ assert.equal(result.stop,true);assert.equal(session.collector.active,false);
 });
