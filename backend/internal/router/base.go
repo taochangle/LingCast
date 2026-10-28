@@ -2,6 +2,8 @@ package router
 
 import (
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -26,7 +28,11 @@ func Base(cfg config.Config) *gin.Engine {
 	// CORS must allow the Vite dev server (e.g. http://localhost:5173) as
 	// well as the nginx-served app origin.
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.CORSOrigins,
+		AllowOrigins:           cfg.CORSOrigins,
+		AllowBrowserExtensions: true,
+		AllowOriginWithContextFunc: func(c *gin.Context, origin string) bool {
+			return strings.HasPrefix(c.Request.URL.Path, "/api/collector/") && regexp.MustCompile(`^chrome-extension://[a-p]{32}$`).MatchString(origin)
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Accept-Language"},
 		AllowCredentials: true,

@@ -353,3 +353,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 - **可配置无头弹幕采集（2026-10-28，更新）**：Live Studio `XHSListener` + `/api/live/:avatarID/xhs` 保存本场分享链接、监听开关和欢迎/回复开关。`worker/xhs_collector.py` 作为独立 systemd 用户服务通过 Playwright 读取网页新增 DOM；不发送小红书网页评论。手动队列优先于 `live_external_queue:{id}`，后者优先于主持。旧房间事件通过 revision 失效。遇到登录或验证显示异常，不自动绕过。本文前述“尚未自动采集”已由本项替代，详见 `docs/xhs-listener.md`。
 
 - **采集位置更新**：用户选择本机有头浏览器，成都出口小红书返回 300012。使用 deploy/install-local-collector.py 安装本机 LaunchAgent 与 loopback SSH 隧道，XHS_BROWSER_HEADLESS=0；成都默认禁用采集服务，仍负责回复/音视频。公网不新增端口。详情见 docs/xhs-listener.md 顶部当前部署说明。
+
+- **Chrome 插件采集（2026-10-28）**：`extensions/chrome` MV3 插件，通过 activeTab 手动采集本场页面 DOM，service worker 带绑定数字人的 12 小时 Bearer 密钥 POST `/api/collector/session|events`。后台提供下载/生成/撤销/停止/事件展示；默认只采集，欢迎和回复需用户在插件开启。原 Playwright 采集服务继续禁用，client=extension 时旧 Collector 跳过。无新端口。代码变动后需 `python3 extensions/package_chrome.py` 同步 ZIP；验证与边界见 docs/chrome-collector.md。

@@ -28,6 +28,8 @@ func RegisterAdmin(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 	api := r.Group("/api")
 	{
 		// ---- Admin auth (login/me/logout are public by design) ----
+		api.POST("/collector/session", liveHandler.CollectorSession)
+		api.POST("/collector/events", liveHandler.CollectorEvents)
 		api.POST("/admin/login", adminHandler.Login)
 		api.GET("/admin/me", adminHandler.Me)
 		api.POST("/admin/logout", adminHandler.Logout)
@@ -77,6 +79,8 @@ func RegisterAdmin(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 			protected.POST("/live/:avatarID/start", liveHandler.Start)
 			protected.POST("/live/:avatarID/stop", liveHandler.Stop)
 			protected.POST("/live/:avatarID/push", liveHandler.Push)
+			protected.POST("/live/:avatarID/collector-token", liveHandler.CollectorPair)
+			protected.DELETE("/live/:avatarID/collector-token", liveHandler.CollectorPair)
 			protected.GET("/live/:avatarID/xhs", liveHandler.XHS)
 			protected.PUT("/live/:avatarID/xhs", liveHandler.XHS)
 			protected.GET("/live/:avatarID/relay", liveHandler.Relay)

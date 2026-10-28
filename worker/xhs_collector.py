@@ -202,9 +202,11 @@ class Collector:
                         avatar=int(key.rsplit(':',1)[1]);configs[avatar]=json.loads(self.redis.get(key) or '{}')
                     for avatar,(revision,task) in list(self.tasks.items()):
                         config=configs.get(avatar,{})
-                        if not config.get('enabled') or config.get('revision')!=revision:
+                        if not config.get('enabled') or config.get('client') == 'extension' or config.get('revision')!=revision:
                             task.cancel();await asyncio.gather(task,return_exceptions=True);self.tasks.pop(avatar)
                     for avatar,config in configs.items():
+                        if config.get('client') == 'extension':
+                            continue
                         if not config.get('enabled'):
                             self.status(avatar,config,'stopped');continue
                         if avatar not in self.tasks:

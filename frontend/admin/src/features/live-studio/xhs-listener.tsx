@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -11,72 +11,63 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 
-type Config = {
-  url: string
-  enabled: boolean
-  welcome: boolean
-  reply: boolean
-  revision: number
-}
-type Event = {
-  id: string
-  kind: string
-  nickname: string
-  text: string
-  observed_ms: number
-  action: string
-}
 type Result = {
-  config: Config
-  status: { state: string; message?: string; received?: number } | null
-  events: Event[]
-}
-const states: Record<string, string> = {
-  stopped: '已停止',
-  connecting: '正在打开直播间',
-  listening: '正在监听',
-  blocked: '需要检查直播页',
-  ended: '直播已结束',
-  error: '监听异常',
+  config: {
+    url: string
+    enabled: boolean
+    welcome: boolean
+    reply: boolean
+    revision: number
+    client?: string
+  }
+  status: {
+    state: string
+    message?: string
+    received?: number
+    updated_ms?: number
+    browser_mode?: string
+  } | null
+  events: {
+    id: string
+    kind: string
+    nickname: string
+    text: string
+    observed_ms: number
+    action: string
+  }[]
 }
 function message(error: unknown) {
   return (
     (error as { response?: { data?: { error?: string } } }).response?.data
-      ?.error || '弹幕监听请求失败，请稍后重试'
+      ?.error || '请求失败，请稍后重试'
   )
 }
 export function XHSListener({ avatarId }: { avatarId: number }) {
-  const [url, setUrl] = useState('')
-  const [welcome, setWelcome] = useState(false)
-  const [reply, setReply] = useState(false)
   const [data, setData] = useState<Result | null>(null)
+  const [token, setToken] = useState('')
+  const [checkedAt, setCheckedAt] = useState(0)
+  const [expires, setExpires] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [pollError, setPollError] = useState('')
+  const tokenInput = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!Number.isFinite(avatarId) || avatarId <= 0) return
     const abort = new AbortController()
-    let initial = true
     const refresh = async () => {
       try {
         const response = await api.get<Result>(`/live/${avatarId}/xhs`, {
           signal: abort.signal,
         })
-        if (abort.signal.aborted) return
-        setData(response.data)
-        setPollError('')
-        if (initial) {
-          setUrl(response.data.config.url || '')
-          setWelcome(response.data.config.welcome)
-          setReply(response.data.config.reply)
-          initial = false
+        if (!abort.signal.aborted) {
+          setData(response.data)
+          setCheckedAt(Date.now())
+          setError('')
         }
       } catch (error) {
-        if (!abort.signal.aborted) setPollError(message(error))
+        if (!abort.signal.aborted) setError(message(error))
       }
     }
     void refresh()
@@ -86,125 +77,152 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
       clearInterval(timer)
     }
   }, [avatarId])
-  const save = async (enabled: boolean, stop = false) => {
+  const act = async (action: 'pair' | 'revoke' | 'stop') => {
     setBusy(true)
     setError('')
     try {
-      const config = stop
-        ? { ...data?.config, enabled: false }
-        : { url, welcome, reply, enabled }
-      const response = await api.put<Result>(`/live/${avatarId}/xhs`, config)
-      setData(response.data)
-      if (!stop) setUrl(response.data.config.url)
-      toast.success(
-        enabled
-          ? '已请求开始监听，将跳过首屏历史消息'
-          : stop
-            ? '已停止监听'
-            : '链接已保存'
-      )
+      if (action === 'pair') {
+        const { data } = await api.post<{ token: string; expires_ms: number }>(
+          `/live/${avatarId}/collector-token`
+        )
+        setToken(data.token)
+        setExpires(data.expires_ms)
+        toast.success('采集密钥已生成，旧密钥已失效')
+      } else if (action === 'revoke') {
+        await api.delete(`/live/${avatarId}/collector-token`)
+        setToken('')
+        toast.success('采集密钥已撤销')
+      } else if (data) {
+        await api.put(`/live/${avatarId}/xhs`, {
+          ...data.config,
+          enabled: false,
+        })
+        toast.success('已停止采集和自动互动')
+      }
+      const result = await api.get<Result>(`/live/${avatarId}/xhs`)
+      setData(result.data)
     } catch (error) {
       setError(message(error))
     } finally {
       setBusy(false)
     }
   }
-  if (!Number.isFinite(avatarId) || avatarId <= 0) return null
-  const state = data?.config.enabled
-    ? states[data.status?.state || ''] || '本机采集端未连接'
-    : '未开启监听'
+  const copy = async () => {
+    tokenInput.current?.select()
+    try {
+      if (navigator.clipboard) await navigator.clipboard.writeText(token)
+      else if (!document.execCommand('copy')) throw new Error()
+      toast.success('采集密钥已复制')
+    } catch {
+      toast.info('密钥已选中，请按 Ctrl+C 或 ⌘C 复制')
+    }
+  }
+  const connected =
+    data?.config.enabled &&
+    data.config.client === 'extension' &&
+    data.status?.state === 'listening' &&
+    !!data.status.updated_ms &&
+    checkedAt - data.status.updated_ms < 90000
   return (
     <Card>
       <CardHeader>
-        <CardTitle>小红书弹幕监听</CardTitle>
+        <CardTitle>直播互动 · Chrome 插件</CardTitle>
         <CardDescription>
-          开播后粘贴本场分享链接，本机可见浏览器会打开房间读取新弹幕和进场提示；换场时更新链接即可。
+          在你正常打开的直播页面读取新聊天和进场提示，发送到当前数字人。无需启动浏览器采集服务。
         </CardDescription>
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
-        <Label htmlFor='xhs-room-url'>
-          弹幕采集地址（也可以粘贴完整分享文案）
-        </Label>
-        <Textarea
-          id='xhs-room-url'
-          rows={3}
-          maxLength={8192}
-          value={url}
-          disabled={!data || busy}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder='https://www.xiaohongshu.com/livestream/… 或 https://xhslink.com/…'
-        />
-        <div className='flex flex-wrap items-center gap-6'>
-          <div className='flex items-center gap-2'>
-            <Switch
-              id='xhs-welcome'
-              checked={welcome}
-              onCheckedChange={setWelcome}
-              disabled={!data || busy}
-            />
-            <Label htmlFor='xhs-welcome'>自动欢迎进场</Label>
-          </div>
-          <div className='flex items-center gap-2'>
-            <Switch
-              id='xhs-reply'
-              checked={reply}
-              onCheckedChange={setReply}
-              disabled={!data || busy}
-            />
-            <Label htmlFor='xhs-reply'>使用 Qwen 回复弹幕</Label>
-          </div>
-        </div>
-        <p className='text-xs text-muted-foreground'>
-          开关修改后点击「保存并开始监听」生效。可先关闭两个开关验证采集；开启后需要数字人处于直播状态才会口播。
-        </p>
+        <ol className='list-decimal pl-5 text-sm'>
+          <li>
+            下载并解压插件，在 chrome://extensions
+            开启开发者模式，选择「加载已解压的扩展程序」。
+          </li>
+          <li>生成采集密钥，在插件里填写服务器地址和密钥。</li>
+          <li>
+            手动打开自己的小红书直播页，点击插件「在当前直播页开始」。默认只采集；确认信息后再开启自动欢迎或回复。
+          </li>
+        </ol>
         <div className='flex flex-wrap items-center gap-2'>
-          <Button
-            variant='outline'
-            disabled={busy || !data}
-            onClick={() => void save(false)}
-          >
-            仅保存，不监听
+          <Button variant='outline' asChild>
+            <a href='/downloads/lingcast-collector.zip' download>
+              下载 Chrome 插件
+            </a>
           </Button>
-          <Button
-            disabled={busy || !data || !url.trim()}
-            onClick={() => void save(true)}
-          >
-            保存并开始监听
+          <Button disabled={busy} onClick={() => void act('pair')}>
+            生成 / 更换采集密钥
           </Button>
           <Button
             variant='outline'
             disabled={busy || !data?.config.enabled}
-            onClick={() => void save(false, true)}
+            onClick={() => void act('stop')}
           >
-            停止监听
+            停止采集
           </Button>
-          <Badge variant='secondary'>{state}</Badge>
-          {data?.config.url && (
-            <a
-              className='text-sm underline'
-              href={data.config.url}
-              target='_blank'
-              rel='noopener noreferrer'
-            >
-              查看已保存的直播间
-            </a>
-          )}
+          <Button
+            variant='outline'
+            disabled={busy}
+            onClick={() => void act('revoke')}
+          >
+            撤销采集密钥
+          </Button>
         </div>
-        {data?.status?.message && (
-          <p role='status' className='text-sm text-muted-foreground'>
-            {data.status.message}
+        <div className='flex flex-col gap-2'>
+          <Label htmlFor='collector-server'>插件填写的服务器地址</Label>
+          <Input
+            id='collector-server'
+            readOnly
+            value={window.location.origin}
+            onFocus={(event) => event.target.select()}
+          />
+        </div>
+        {token && (
+          <div className='flex flex-col gap-2'>
+            <Label htmlFor='collector-token'>当前数字人的采集密钥</Label>
+            <Input
+              id='collector-token'
+              ref={tokenInput}
+              readOnly
+              value={token}
+              onFocus={(event) => event.target.select()}
+            />
+            <div>
+              <Button variant='outline' onClick={() => void copy()}>
+                复制密钥
+              </Button>
+            </div>
+            <p className='text-xs text-muted-foreground'>
+              有效至 {new Date(expires).toLocaleString()}
+              ，仅授权当前数字人的采集接口。刷新后不再显示；更换密钥会停止旧插件会话。
+            </p>
+          </div>
+        )}
+        <div className='flex flex-wrap items-center gap-2'>
+          <Badge variant='secondary'>
+            {connected
+              ? '插件已连接'
+              : data?.config.enabled
+                ? '等待插件连接'
+                : '未开启采集'}
+          </Badge>
+          <span className='text-sm text-muted-foreground'>
+            已接收 {data?.status?.received || 0} 条 · 自动欢迎
+            {data?.config.welcome ? '开' : '关'} · 自动回复
+            {data?.config.reply ? '开' : '关'}
+          </span>
+        </div>
+        {data?.config.client === 'extension' && data.config.url && (
+          <p className='text-xs break-all text-muted-foreground'>
+            当前房间：{data.config.url}
           </p>
         )}
-        {(error || pollError) && (
+        <p className='text-xs text-muted-foreground'>
+          跳过启动时已有消息、主播发言和系统通知；重复进场去重，每分钟最多欢迎一次，每12秒最多回复一条。手动口播优先，播完继续主持。刷新直播页后需重新开始采集。
+        </p>
+        {error && (
           <Alert variant='destructive'>
-            <AlertDescription>{error || pollError}</AlertDescription>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <p className='text-xs text-muted-foreground'>
-          本机需保持运行，登录或验证可在弹出的独立浏览器中完成。跳过历史消息、主播发言、点赞和礼物；重复欢迎去重，同房间最多每分钟欢迎一次、每
-          12
-          秒回复一条。手动口播优先，互动完成后继续自主主持。遇到登录或验证码会显示异常，不会自动绕过。
-        </p>
         <details open>
           <summary className='cursor-pointer text-sm'>
             最近采集消息（当前房间最多显示 40 条）
@@ -218,12 +236,19 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
                   </span>
                   <strong>{event.nickname}</strong>
                   {event.kind === 'enter' ? ' 来了' : `：${event.text}`}
+                  <span className='ml-2 text-xs text-muted-foreground'>
+                    {event.action === 'welcome'
+                      ? '已排队欢迎'
+                      : event.action === 'reply'
+                        ? '回复生成中'
+                        : '仅展示'}
+                  </span>
                 </li>
               ))}
             </ul>
           ) : (
             <p className='mt-3 text-sm text-muted-foreground'>
-              尚未采集到新消息。开始监听时已有的消息不会补播。
+              尚未收到新消息。插件启动前的历史消息不会补播。
             </p>
           )}
         </details>

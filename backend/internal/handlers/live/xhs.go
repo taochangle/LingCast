@@ -15,6 +15,7 @@ import (
 )
 
 type xhsConfig struct {
+	Client   string `json:"client,omitempty"`
 	URL      string `json:"url"`
 	Enabled  bool   `json:"enabled"`
 	Welcome  bool   `json:"welcome"`

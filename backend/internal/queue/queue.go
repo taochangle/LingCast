@@ -177,3 +177,16 @@ func (q *Queue) PushBounded(ctx context.Context, key, value string, limit int64)
 	}
 	return nil
 }
+
+func (q *Queue) WriteValueTTL(ctx context.Context, key, value string, ttl time.Duration) error {
+	return q.client.Set(ctx, key, value, ttl).Err()
+}
+func (q *Queue) Claim(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	return q.client.SetNX(ctx, key, "1", ttl).Result()
+}
+func (q *Queue) IncrementTTL(ctx context.Context, key string, n int64, ttl time.Duration) (int64, error) {
+	return q.client.Eval(ctx, `local n=redis.call('INCRBY',KEYS[1],ARGV[1]); redis.call('PEXPIRE',KEYS[1],ARGV[2]); return n`, []string{key}, n, ttl.Milliseconds()).Int64()
+}
+func (q *Queue) PrependBounded(ctx context.Context, key, value string, limit int, ttl time.Duration) error {
+	return q.client.Eval(ctx, `redis.call('LPUSH',KEYS[1],ARGV[1]); redis.call('LTRIM',KEYS[1],0,tonumber(ARGV[2])-1); redis.call('PEXPIRE',KEYS[1],ARGV[3]); return 1`, []string{key}, value, limit, ttl.Milliseconds()).Err()
+}

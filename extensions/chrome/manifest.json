@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "LingCast 直播互动采集",
+  "description": "手动采集当前小红书直播页的新聊天与进场提示，发送到你配置的 LingCast 服务。",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "scripting", "storage", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": {"default_popup": "popup.html", "default_title": "LingCast 互动采集"},
+  "background": {"service_worker": "background.js", "type": "module"}
+}
