@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { RelaySettings } from './relay-settings'
+import { XHSListener } from './xhs-listener'
 import { ProjectReader } from './project-reader'
 import { HostPanel } from './host-panel'
 import Player from 'xgplayer'
@@ -424,6 +425,7 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
         </Card>
 
         <RelaySettings key={id} avatarId={id} started={started} />
+        <XHSListener key={`xhs-${id}`} avatarId={id} />
         <ProjectReader key={`project-${id}`} avatarId={id} started={started} onMaterial={(topic, text) => setHostMaterial({ topic, text, version: Date.now() })} />
         <HostPanel key={`host-${id}-${hostMaterial?.version || 0}`} avatarId={id} started={started} material={hostMaterial} />
 

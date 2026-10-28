@@ -127,6 +127,7 @@ resident-runtime = [
     "onnxruntime>=1.17",
     "opencv-python-headless>=4.9",
     "pillow>=10.2",
+    "playwright>=1.50,<2",
     "psutil>=6",
 ]
 

@@ -55,6 +55,7 @@ from storage import S3Storage
 import numpy as np
 from ai.resident_client import ResidentRenderer, CompletedClip
 from ai.host_director import HostDirector
+from streaming.incoming import pop_live_job
 from streaming.ffmpeg_pipe import AUDIO_SAMPLE_RATE, FFmpegPipeClosedError
 from worker import (
     _check_required_env,
@@ -905,7 +906,7 @@ class LiveAvatarSession:
         if (
             self._tts_thread is None or not self._tts_thread.is_alive()
         ) and not self._pending.full():
-            raw = r.lpop(self.queue_key)
+            raw = pop_live_job(r, self.queue_key, self.avatar_id)
             if raw:
                 text, tts_s3_key, base_video_key, queued_ts = parse_live_message(raw)
                 narration = None
@@ -944,7 +945,7 @@ class LiveAvatarSession:
                     and self._pending.empty() and self._tts_results.empty()
                     and self._talk_queue.empty()
                     and playback.get('playback') != 'playing')
-            manual_busy = bool(r.llen(self.queue_key) or
+            manual_busy = bool(r.llen(self.queue_key) or r.llen(f'live_external_queue:{self.avatar_id}') or
                               (self._tts_thread and self._tts_thread.is_alive()) or
                               not self._pending.empty() or not self._tts_results.empty())
             with self._idle_lock:

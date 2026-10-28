@@ -138,9 +138,11 @@ type pushLiveRequest struct {
 }
 
 type liveMessageRequest struct {
-	Text     string `json:"text"`
-	UserID   uint   `json:"senderId"`
-	Username string `json:"username"`
+	Source       string `json:"source"`
+	RoomRevision int64  `json:"roomRevision"`
+	Text         string `json:"text"`
+	UserID       uint   `json:"senderId"`
+	Username     string `json:"username"`
 }
 
 type liveMessageResponse struct {
@@ -646,13 +648,25 @@ func (h *LiveHandler) Message(c *gin.Context) {
 		return
 	}
 
+	var scope *xhsReplyScope
+	if req.Source == "xiaohongshu" {
+		scope = &xhsReplyScope{Revision: req.RoomRevision}
+		if utf8.RuneCountInString(req.Text) > 500 || utf8.RuneCountInString(req.Username) > 50 || !h.xhsReplyAllowed(c.Request.Context(), avatar.ID, scope) {
+			c.JSON(409, gin.H{"error": "本场自动回复未开启或房间已变更"})
+			return
+		}
+	}
 	// Persist the viewer message (identity comes from the audience client;
 	// 直播台 test messages fall back to a guest-ish snapshot).
 	sender := strings.TrimSpace(req.Username)
 	if sender == "" {
 		sender = "游客"
 	}
-	userMsg := models.LiveMessage{AvatarID: avatar.ID, SenderID: req.UserID, SenderType: "web", Username: sender, Role: "user", Content: strings.TrimSpace(req.Text)}
+	senderType := "web"
+	if scope != nil {
+		senderType = "xiaohongshu"
+	}
+	userMsg := models.LiveMessage{AvatarID: avatar.ID, SenderID: req.UserID, SenderType: senderType, Username: sender, Role: "user", Content: strings.TrimSpace(req.Text)}
 	if err := h.db.Create(&userMsg).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -665,7 +679,7 @@ func (h *LiveHandler) Message(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	go func() {
 		defer cancel()
-		h.processChatReply(ctx, lang, req.Text, avatar, req.UserID)
+		h.processChatReply(ctx, lang, req.Text, avatar, req.UserID, scope)
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{"accepted": true, "messageId": userMsg.ID})
@@ -675,7 +689,7 @@ func (h *LiveHandler) Message(c *gin.Context) {
 // + RAG + LLM), persist it, then sentence-chunk it into the live queue. Any
 // failure is logged and degrades gracefully (the viewer still sees their own
 // message via history polling; the bot simply stays silent on this one).
-func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText string, avatar models.Avatar, userID uint) {
+func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText string, avatar models.Avatar, userID uint, scope *xhsReplyScope) {
 	t0 := time.Now()
 	reply, ragFacts := h.llmChat(ctx, lang, userText, avatar)
 	chunks := splitSentences(reply)
@@ -689,6 +703,9 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 	// Strip <action:...> markers from the persisted reply (they are invisible
 	// to viewers) and rebuild the clean text from the parsed chunks so a
 	// marker at a chunk start is removed exactly once.
+	if !h.xhsReplyAllowed(ctx, avatar.ID, scope) {
+		return
+	}
 	cleanReply := actionTagAnywhere.ReplaceAllString(reply, "")
 
 	ragJSON := ""
@@ -711,12 +728,18 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 	}
 
 	key := liveQueueKey(avatar.ID)
+	if scope != nil {
+		key = fmt.Sprintf("live_external_queue:%d", avatar.ID)
+	}
 	historyKey := liveHistoryKey(avatar.ID)
 	for _, chunk := range chunks {
 		clean, actionKey := parseActionTag(chunk)
 		payload := map[string]any{
 			"text": clean,
 			"ts":   time.Now().UnixMilli(), // worker 用 queue age 计算端到端延迟
+		}
+		if scope != nil {
+			payload["xhs_revision"] = scope.Revision
 		}
 		if actionKey != "" {
 			payload["base_video_s3_key"] = actionKey

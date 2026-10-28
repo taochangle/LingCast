@@ -1,0 +1,11 @@
+[Unit]
+Description=LingCast headless Xiaohongshu chat collector
+After=network-online.target
+[Service]
+WorkingDirectory=/data1/taoxin/LingCast/worker
+ExecStart=/data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime python -u xhs_collector.py
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=15
+[Install]
+WantedBy=default.target

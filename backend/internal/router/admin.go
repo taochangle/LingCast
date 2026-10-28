@@ -77,6 +77,8 @@ func RegisterAdmin(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 			protected.POST("/live/:avatarID/start", liveHandler.Start)
 			protected.POST("/live/:avatarID/stop", liveHandler.Stop)
 			protected.POST("/live/:avatarID/push", liveHandler.Push)
+			protected.GET("/live/:avatarID/xhs", liveHandler.XHS)
+			protected.PUT("/live/:avatarID/xhs", liveHandler.XHS)
 			protected.GET("/live/:avatarID/relay", liveHandler.Relay)
 			protected.PUT("/live/:avatarID/relay", liveHandler.Relay)
 			protected.POST("/projects/read", liveHandler.ReadProject)

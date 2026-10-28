@@ -1,0 +1,17 @@
+# 小红书弹幕采集
+
+直播台「小红书弹幕监听」中的链接用于服务器无头浏览器读取网页，和 RTMP 推流配置相互独立。开播后粘贴本场完整 `xiaohongshu.com/livestream/...` 地址或 `xhslink.com` 分享文案，再点击「保存并开始监听」。每个数字人分别保存配置，刷新、服务重启后保留；更新房间或开关后重新点击开始会关闭旧页面、打开新页面并重新建立历史消息基线。
+
+自动欢迎和 Qwen 回复默认关闭。可以先只监听，确认最近消息正常再按需要开启。采集器不会向小红书网页发送文字；回复只进入本系统数字人口播。数字人未开启时仍可采集，事件不会补排口播。只打开一个浏览器进程，每个房间独立上下文，最多同时四个房间，不使用本机浏览器的登录 Cookie。
+
+页面初始化等待输入区域出现并等待历史加载，随后用 MutationObserver 读取新增 `.msg-wrapper.role-user`。过滤 `.role-host`、系统通知、点赞、分享和礼物；昵称取 `.nickname`，正文取 `.content`，图片表情用 alt 文本。`.enter-msgs` 中“来了”识别为进场。空房间也可以等待新消息。仅依赖可见网页 DOM，没有逆向私有 WebSocket 协议。
+
+限流：事件 ID 去重、30 秒过期；相同观众 5 分钟内重复进入不重复欢迎，同房间每分钟最多一次欢迎；每 12 秒最多回复一条，同文 15 秒内重复不触发。最近事件最多保存 100 条、保留一天，页面展示当前配置修订的最近 40 条。网页重新渲染、断线重连时基线会重建，可能略过刚发生的事件；不能宣称平台级消息无丢失。
+
+优先级：`live_queue:{id}` 手动口播 → `live_external_queue:{id}` 观众互动 → 自主主持。当前播放段和当前模型请求会完成，再处理新任务。外部事件携带配置 revision，停止或换房后旧队列被清空，尚在生成的旧回复也会在入队/消费阶段校验 revision，避免播到新房间。外部队列生成回复仍受已有队列容量 5 条限制，采集端有额外低水位检查与最多两个并行操作。
+
+管理员接口：`GET/PUT /api/live/:avatarID/xhs`，字段 url、enabled、welcome、reply。返回 config、当前心跳 status 和最近 events。完整分享 token 只出现在管理员配置中，不写入采集日志。普通消息入口接受 source=xiaohongshu、roomRevision，仅在对应房间启用回复且 revision 匹配时受理，回复使用原 Qwen/聊天记录链路。
+
+部署使用 `deploy/lingcast-xhs-collector.service` 独立运行 `worker/xhs_collector.py`，没有新增监听端口。Playwright 加入锁定的 resident-runtime 依赖组；`deploy/chengdu.sh` 在停服务前安装匹配的 Chromium Headless Shell 并预检启动，失败时保留现有直播进程。Ubuntu 若缺系统动态库，需要根据 Playwright 报错安装对应系统依赖，再重试发布。后台状态包括连接中、监听中、需要登录/验证、直播结束、连接异常；不会自动绕过验证码。发生异常需人工检查并重新开始，不无限刷新房间。
+
+测试：`cd worker && uv run --group resident-runtime python -m unittest discover -s tests`，浏览器 DOM 测试覆盖首屏历史、主播/点赞过滤、表情和新进场；策略测试覆盖去重、限流、过期和手动优先/旧房间回复丢弃。Go 测试覆盖分享文案解析、完整 query 保留、拒绝非直播页/非小红书域名。
