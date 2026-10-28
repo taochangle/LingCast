@@ -302,6 +302,16 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 
 ## 7. 已知坑（务必先读）
 
+- **版本化发布与自然语音切段（更新）**：本地测试 → git commit/push → 成都 git pull --ff-only → bash deploy/chengdu.sh；根 Compose + deploy/chengdu.override.yml 是当前部署入口，不再用迁移时的私有 compose.json。镜像标签与 runtime/deployed-revision 记录 SHA。直接口播完整任务一次 TTS，再由 ai/speech_segments.py 按停顿切音频、逐片生成即播；不再固定 50 字切稿。细节见 docs/chengdu-deployment.md。
+
+- **LatentSync 提速（2026-10-28，更新）**：成都常驻模型默认已设 `LATENTSYNC_STEPS=10`，源码仍有 20 步兜底；同一 5.06 秒音频、两轮中位数：20/15/10/8 步分别 24.58/20.98/17.08/15.73 秒。仅模型请求阶段，不能宣称包含浏览器延迟。样例画质接近，10 步折中；对比视频与方法见 `docs/latentsync-steps-benchmark.md`。后文旧的“20 步保留”描述已被此项替代。
+
+- **GitHub 项目速读（2026-10-28）**：Live Studio 新增公开仓库读取、可编辑短讲稿、文件依据与按原文讲解。管理员 API `/api/projects/read` 固定默认分支提交，读取最多 7 个文件，不执行仓库代码；`/api/live/:avatarID/narrate` 限 220 字，最多 5 个 50 字短段原子入队，避免模型服务 20 秒音频上限。计划口播无聊天过期时间，每段生成期间仍待机；尚非整场连续预生成，也没有演示画面。详见 `docs/resident-live.md`。
+
+- **常驻互动链路（2026-10-28）**：用户明确选用 IndexTTS + LatentSync。实现与恢复命令见 `docs/resident-live.md`；新云端服务在 `/data1/taoxin/lingcast-resident`、loopback 59411/59412，不替换旧 17864 服务。`worker/.env.local` 配置 `LIPSYNC_ENGINE=latentsync`，整个口播 MP4 预加载后插播，播完回到待机；OBS 入口 `/obs.html?avatar=1`。20 步参数保留，模型/人脸对齐缓存常驻。当前实测回复仍需约 26 秒，不得宣称秒级实时或已完成小红书接入。
+
+- **Qwen 接入（2026-10-28）**：支持 `OPENAI_API=chat_completions` 与 `V2_QWEN_API_KEY/BASE_URL/MODEL`，禁用思考、拦截截断回复；原 Responses 模式保留。配置与数字人导入/同音频口型对比见 `docs/qwen-and-lipsync-comparison.md`。本机测试管理端使用 59480，勿与其他项目占用的 8080 混淆。IndexTTS/LatentSync 目前为对比测试复用，尚未接上正式直播 Worker。
+
 - **模型目录不入库**：clone 后没有 `models/`/`external/` 是正常的，跑
   `download_models.py` 或拷贝。
 - **GitHub 慢**：本机可走代理，例如

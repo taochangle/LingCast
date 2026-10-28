@@ -56,7 +56,9 @@ class FFmpegPipe:
         rtmp_url: str | None = None,
         ffmpeg_bin: str = "ffmpeg",
         log_path: Path | None = None,
+        per_frame_audio: bool = False,
     ):
+        self.per_frame_audio = per_frame_audio
         self.stream_id = stream_id
         self.width = width
         self.height = height
@@ -90,6 +92,7 @@ class FFmpegPipe:
             "-s", f"{self.width}x{self.height}",
             "-r", str(self.fps),
             "-i", "pipe:0",
+            *(["-probesize", "32", "-analyzeduration", "0"] if self.per_frame_audio else []),
             "-f", "s16le",
             "-ar", str(AUDIO_SAMPLE_RATE),
             "-ac", "1",

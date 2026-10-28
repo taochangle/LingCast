@@ -27,6 +27,8 @@ type Config struct {
 	OpenAIAPIKey        string
 	OpenAIBaseURL       string
 	OpenAIModel         string
+	OpenAIAPI           string
+	LiveRenderEngine    string
 	EmbedServerURL      string
 	TTSServiceURL       string
 	VideoGenServiceURL  string
@@ -105,9 +107,11 @@ func Load() Config {
 		TaskQueueKey:        env("TASK_QUEUE_KEY", "talking_avatar:tasks"),
 		LiveControlQueueKey: env("LIVE_CONTROL_QUEUE_KEY", "talking_avatar:live_control"),
 		AvatarInitQueueKey:  env("AVATAR_INIT_QUEUE_KEY", "talking_avatar:avatar_init"),
-		OpenAIAPIKey:        os.Getenv("OPENAI_API_KEY"),
-		OpenAIBaseURL:       env("OPENAI_BASE_URL", "https://api.deepseek.com"),
-		OpenAIModel:         env("OPENAI_MODEL", "deepseek-v4-flash"),
+		OpenAIAPIKey:        env("V2_QWEN_API_KEY", os.Getenv("OPENAI_API_KEY")),
+		OpenAIBaseURL:       env("V2_QWEN_BASE_URL", env("OPENAI_BASE_URL", "https://api.deepseek.com")),
+		OpenAIModel:         env("V2_QWEN_MODEL", env("OPENAI_MODEL", "deepseek-v4-flash")),
+		LiveRenderEngine:    env("LIPSYNC_ENGINE", "wav2lip"),
+		OpenAIAPI:           env("OPENAI_API", llmAPIDefault()),
 		EmbedServerURL:      env("EMBED_SERVER_URL", "http://host.docker.internal:8090"),
 		TTSServiceURL:       env("TTS_SERVICE_URL", "http://service-tts:8002"),
 		VideoGenServiceURL:  env("VIDEO_GEN_SERVICE_URL", "http://service-video-gen:8003"),
@@ -131,4 +135,11 @@ func Load() Config {
 
 		CORSOrigins: splitCSV(env("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8080,https://admin.lingcast.com")),
 	}
+}
+
+func llmAPIDefault() string {
+	if os.Getenv("V2_QWEN_BASE_URL") != "" {
+		return "chat_completions"
+	}
+	return "responses"
 }

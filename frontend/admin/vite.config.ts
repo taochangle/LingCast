@@ -8,6 +8,14 @@ import { playwright } from '@vitest/browser-playwright'
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        obs: path.resolve(__dirname, 'obs.html'),
+      },
+    },
+  },
   plugins: [
     tanstackRouter({
       target: 'react',

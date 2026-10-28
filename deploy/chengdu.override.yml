@@ -1,0 +1,31 @@
+# Use with root compose, project lingcast-chengdu. Only 59480 is public.
+services:
+  redis:
+    ports: !override ["127.0.0.1:59479:6379"]
+  rustfs:
+    ports: !override ["127.0.0.1:59478:9000"]
+  srs:
+    ports: !override ["127.0.0.1:59481:1935"]
+  frontend-admin:
+    ports: !override ["59480:80"]
+  api-admin:
+    networks: [default, qwen]
+    environment:
+      V2_QWEN_BASE_URL: http://vllm:8000/v1
+      S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
+      CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
+      LIPSYNC_ENGINE: latentsync
+  api-live:
+    networks: [default, qwen]
+    environment:
+      V2_QWEN_BASE_URL: http://vllm:8000/v1
+      S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
+      CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
+      LIPSYNC_ENGINE: latentsync
+  api-scheduler:
+    environment:
+      S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
+networks:
+  qwen:
+    external: true
+    name: vllm_default

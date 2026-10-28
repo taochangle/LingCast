@@ -52,6 +52,8 @@ from pathlib import Path
 import redis
 
 from storage import S3Storage
+import numpy as np
+from ai.resident_client import ResidentRenderer, CompletedClip
 from streaming.ffmpeg_pipe import AUDIO_SAMPLE_RATE, FFmpegPipeClosedError
 from worker import (
     _check_required_env,
@@ -128,14 +130,15 @@ def parse_live_message(raw: str) -> tuple[str, str | None, str | None, int]:
 class _TalkingSegment:
     """One lip-synced sentence waiting in the ready-frames queue."""
 
-    __slots__ = ("text", "audio", "total_frames", "frames_written", "pos")
+    __slots__ = ("text", "audio", "total_frames", "frames_written", "pos", "telemetry")
 
-    def __init__(self, text: str, audio: bytes, total_frames: int):
+    def __init__(self, text: str, audio: bytes, total_frames: int, telemetry=None):
         self.text = text
         self.audio = audio
         self.total_frames = total_frames
         self.frames_written = 0
         self.pos = 0
+        self.telemetry = telemetry or {}
 
     def next_slice(self, bytes_per_slice: int) -> bytes:
         """Next sequential audio slice (0.5s chunks), empty when exhausted."""
@@ -282,7 +285,8 @@ class LiveAvatarSession:
 
         if not self.base_video_path.exists():
             raise RuntimeError(f"base video not found: {self.base_video_path}")
-        self.lipsync = Wav2LipOnnxLipSync()
+        self.resident = ResidentRenderer(self.storage) if os.environ.get("LIPSYNC_ENGINE") == "latentsync" else None
+        self.lipsync = None if self.resident else Wav2LipOnnxLipSync()
         # Optional face restoration fixes Wav2Lip lip deformation (口型变形).
         # Live follows the same FACE_ENHANCER env as offline
         # (gfpgan|codeformer|off); the auto default stays disabled because
@@ -291,7 +295,7 @@ class LiveAvatarSession:
         # every ~4th frame), keeping the producer ahead of real-time.
         from ai.enhancer import create_enhancer
 
-        self.enhancer = create_enhancer(pipeline="live")
+        self.enhancer = None if self.resident else create_enhancer(pipeline="live")
         if self.enhancer is not None:
             self.lipsync.enhancer = self.enhancer
             logger.info("live pipeline face enhancer: %s", self.enhancer.kind)
@@ -330,20 +334,24 @@ class LiveAvatarSession:
                 self.idle_switch_mode,
                 self.idle_switch_seconds,
             )
-        # Preload the Wav2Lip session + face detector so the FIRST sentence
-        # starts as soon as TTS lands (lazy load would add 2-4s at talk time).
-        try:
-            self.lipsync._load_model()
-            self.lipsync._face_detect(self.base_frames[:1])
-            logger.info(
-                "avatar %s lipsync model + face detector warmed up",
-                self.avatar_id,
-            )
-        except Exception:
-            logger.exception(
-                "avatar %s lipsync warmup failed (will retry lazily)",
-                self.avatar_id,
-            )
+        if self.resident:
+            self.resident.warmup(self.idle_video_keys[0])
+            logger.info("resident models ready; avatar alignment cached")
+        else:
+            # Preload the Wav2Lip session + face detector so the FIRST sentence
+            # starts as soon as TTS lands (lazy load would add 2-4s at talk time).
+            try:
+                self.lipsync._load_model()
+                self.lipsync._face_detect(self.base_frames[:1])
+                logger.info(
+                    "avatar %s lipsync model + face detector warmed up",
+                    self.avatar_id,
+                )
+            except Exception:
+                logger.exception(
+                    "avatar %s lipsync warmup failed (will retry lazily)",
+                    self.avatar_id,
+                )
 
         h, w = self.base_frames[0].shape[:2]
         # Preload the subtitle renderer + CJK font BEFORE the pipe starts.
@@ -371,6 +379,7 @@ class LiveAvatarSession:
             height=h,
             fps=self.fps,
             log_path=self.work_dir / "ffmpeg.log",
+            per_frame_audio=self.resident is not None,
         )
         self.pipe.start()
         self.ready = True
@@ -391,13 +400,14 @@ class LiveAvatarSession:
         tts_s3_key: str | None = None,
         base_video_key: str | None = None,
         queued_ts: int = 0,
+        narration=None,
     ) -> bool:
         """Kick off a producer-side TTS job (synthesize or S3 download)."""
         if self._tts_thread is not None and self._tts_thread.is_alive():
             return False
         self._tts_thread = threading.Thread(
             target=self._run_tts,
-            args=(text, tts_s3_key, base_video_key, queued_ts),
+            args=(text, tts_s3_key, base_video_key, queued_ts, narration),
             daemon=True,
             name=f"tts-{self.stream_id}",
         )
@@ -410,6 +420,7 @@ class LiveAvatarSession:
         tts_s3_key: str | None = None,
         base_video_key: str | None = None,
         queued_ts: int = 0,
+        narration=None,
     ) -> None:
         """Synthesize locally or download a shared TTS wav from S3.
 
@@ -419,6 +430,24 @@ class LiveAvatarSession:
         """
         t_job = time.perf_counter()
         try:
+            if self.resident:
+                self._state("render", "generating")
+                with self._idle_lock:
+                    key = base_video_key or self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)]
+                if narration:
+                    for clip in self.resident.render_narration(text, key, self.work_dir,
+                            narration['job_id'], narration.get('submitted_ms', 0)):
+                        if not self._running:
+                            break
+                        self._state("render", "ready", clip_key=clip.s3_key,
+                                    generation_seconds=str(round(clip.metrics['total_seconds'], 3)))
+                        self._tts_results.put((text, clip, base_video_key, time.perf_counter()))
+                    return
+                clip = self.resident.render(text, key, self.work_dir, tts_key=tts_s3_key)
+                self._state("render", "ready", clip_key=clip.s3_key,
+                            generation_seconds=str(round(clip.metrics['total_seconds'],3)))
+                self._tts_results.put((text, clip, base_video_key, time.perf_counter()))
+                return
             out = self.work_dir / f"chunk_{int(time.time() * 1000)}.wav"
             if tts_s3_key:
                 if self.storage is None:
@@ -458,6 +487,7 @@ class LiveAvatarSession:
             )
             self._tts_results.put((text, wav, base_video_key, time.perf_counter()))
         except Exception:
+            self._state("render", "failed")
             logger.exception("avatar %s TTS failed for: %s", self.avatar_id, text)
             self._tts_results.put((text, None, base_video_key, time.perf_counter()))
 
@@ -477,7 +507,9 @@ class LiveAvatarSession:
         """Start the watchdog writer thread and the queue-management loop."""
         if self._feed_thread is not None and self._feed_thread.is_alive():
             return
+        self._redis = r
         self._running = True
+        self._state("playback", "idle")
         self._writer_thread = threading.Thread(
             target=self._writer_loop,
             daemon=True,
@@ -557,6 +589,7 @@ class LiveAvatarSession:
         half_sec_frames = max(1, int(round(self.fps / 2)))
         silence_slice = b"\x00\x00" * (half_sec_bytes // 2)
         idle_count = 0
+        audio_clock = 0
         cur_seg: _TalkingSegment | None = None
         seg_start_ts: float | None = None
         next_tick = time.perf_counter()
@@ -569,6 +602,8 @@ class LiveAvatarSession:
                 if next_tick < time.perf_counter() - interval:
                     next_tick = time.perf_counter()
                 t0 = time.perf_counter()
+                audio_bytes = (round((audio_clock+1)*AUDIO_SAMPLE_RATE/self.fps)-round(audio_clock*AUDIO_SAMPLE_RATE/self.fps))*2
+                audio_clock += 1
 
                 # Probe: how long does the ready-frame queue block us?
                 t_get = time.perf_counter()
@@ -588,6 +623,7 @@ class LiveAvatarSession:
                     # Producer aborted (e.g. TTS/Wav2Lip failure): abandon the
                     # current segment and fall back to idle immediately.
                     cur_seg = None
+                    self._state("playback", "idle")
                     self._subtitle_text = ""
                     seg_start_ts = None
                     kind = None
@@ -600,33 +636,48 @@ class LiveAvatarSession:
                             (time.perf_counter() - seg_start_ts) * 1000.0,
                         )
                         seg_start_ts = None
-                    # Pre-buffer the first 0.5s of audio before the first frame
-                    # (ffmpeg waits for every input's first packet; this also
-                    # gives the AAC encoder runway against writer jitter).
-                    if cur_seg.frames_written == 0:
-                        pre = cur_seg.next_slice(half_sec_bytes)
-                        if pre:
-                            self.pipe.write_audio(pre)
-                    # Write the periodic audio slice BEFORE this frame: video
-                    # frames are ~2.7MB at 720x1280 and the pipe write can
-                    # block on ffmpeg backpressure for tens of ms. Writing
-                    # audio first means encoder starvation can never be caused
-                    # by a slow video write.
-                    if (
-                        cur_seg.frames_written > 0
-                        and cur_seg.frames_written % half_sec_frames == 0
-                        and cur_seg.pos < len(cur_seg.audio)
-                    ):
-                        audio = cur_seg.next_slice(half_sec_bytes)
-                        if audio:
-                            self.pipe.write_audio(audio)
+                        self._state("playback", "playing")
+                        if cur_seg.telemetry:
+                            meta = cur_seg.telemetry
+                            elapsed = ((time.time()*1000-meta['submitted_ms'])/1000
+                                       if meta.get('submitted_ms') else 0)
+                            logger.info('[NARRATION] job=%s part=%s/%s first_frame_after=%.3fs',
+                                        meta['job_id'], meta['index'], meta['count'], elapsed)
+                            self._state('playback', 'playing', job_id=meta['job_id'],
+                                        segment=str(meta['index']), segments=str(meta['count']))
+                    if self.resident:
+                        # Exact sample clock across idle/speech boundaries. Never
+                        # leave half a second of idle audio ahead of a new clip.
+                        self.pipe.write_audio(cur_seg.next_slice(audio_bytes).ljust(audio_bytes, b"\0"))
+                    else:
+                        # Pre-buffer the first 0.5s of audio before the first frame
+                        # (ffmpeg waits for every input's first packet; this also
+                        # gives the AAC encoder runway against writer jitter).
+                        if cur_seg.frames_written == 0:
+                            pre = cur_seg.next_slice(half_sec_bytes)
+                            if pre:
+                                self.pipe.write_audio(pre)
+                        # Write the periodic audio slice BEFORE this frame: video
+                        # frames are ~2.7MB at 720x1280 and the pipe write can
+                        # block on ffmpeg backpressure for tens of ms. Writing
+                        # audio first means encoder starvation can never be caused
+                        # by a slow video write.
+                        if (
+                            cur_seg.frames_written > 0
+                            and cur_seg.frames_written % half_sec_frames == 0
+                            and cur_seg.pos < len(cur_seg.audio)
+                        ):
+                            audio = cur_seg.next_slice(half_sec_bytes)
+                            if audio:
+                                self.pipe.write_audio(audio)
                     self._write_frame(payload)
                     self._last_tick = time.monotonic()
                     cur_seg.frames_written += 1
                     if cur_seg.frames_written >= cur_seg.total_frames:
-                        if cur_seg.pos < len(cur_seg.audio):
+                        if not self.resident and cur_seg.pos < len(cur_seg.audio):
                             self.pipe.write_audio(cur_seg.audio[cur_seg.pos :])
                         cur_seg = None
+                        self._state("playback", "idle")
                         self._subtitle_text = ""
                         # Resume idle from the clip that was actually speaking
                         # (mouth moves on the same video that was on screen),
@@ -642,7 +693,9 @@ class LiveAvatarSession:
                 else:
                     # Idle fallback: base animation + silence.
                     idle_count += 1
-                    if idle_count % half_sec_frames == 1:
+                    if self.resident:
+                        self.pipe.write_audio(b"\0" * audio_bytes)
+                    elif idle_count % half_sec_frames == 1:
                         self.pipe.write_audio(silence_slice)
                     self._write_frame(self._idle_frame())
                     self._last_tick = time.monotonic()
@@ -854,14 +907,25 @@ class LiveAvatarSession:
             raw = r.lpop(self.queue_key)
             if raw:
                 text, tts_s3_key, base_video_key, queued_ts = parse_live_message(raw)
+                narration = None
+                try:
+                    entry = json.loads(raw)
+                    if isinstance(entry, dict) and entry.get('narration') is True:
+                        narration = {'job_id': entry.get('job_id') or f'legacy-{time.time_ns()}',
+                                     'submitted_ms': entry.get('submitted_ms', 0)}
+                except (ValueError, TypeError):
+                    pass
                 if text or tts_s3_key:
+                    if queued_ts and time.time()*1000-queued_ts > 120000:
+                        logger.info("dropping expired live reply")
+                        return
                     if queued_ts:
                         logger.info(
                             "[CHAIN] avatar %s queue age %.0fms (backend push -> worker pop)",
                             self.avatar_id,
                             time.time() * 1000.0 - queued_ts,
                         )
-                    self.maybe_start_tts(text, tts_s3_key, base_video_key, queued_ts)
+                    self.maybe_start_tts(text, tts_s3_key, base_video_key, queued_ts, narration)
 
         # 2) Move finished TTS results into the producer's pending queue.
         try:
@@ -933,6 +997,9 @@ class LiveAvatarSession:
         """
         if wav is None:
             logger.warning("avatar %s chunk skipped (TTS failed)", self.avatar_id)
+            return
+        if isinstance(wav, CompletedClip):
+            self._produce_completed_clip(text, wav)
             return
         t_prod = time.perf_counter()
         if tts_ready_ts:
@@ -1019,6 +1086,57 @@ class LiveAvatarSession:
                     wav.unlink(missing_ok=True)
                 except OSError:
                     logger.warning("failed to remove temp tts file %s", wav)
+
+    def _state(self, field, value, **extra):
+        try:
+            r = getattr(self, "_redis", None)
+            if r is not None:
+                mapping = {field: value, field + "_at": str(time.time()), **extra}
+                r.hset(f"live_playback:{self.avatar_id}", mapping=mapping)
+                r.expire(f"live_playback:{self.avatar_id}", 86400)
+        except Exception:
+            logger.warning("failed to report playback state")
+
+    def _produce_completed_clip(self, text, clip):
+        """Predecode the complete generated clip before publishing a segment.
+
+        No partial video or asynchronous frame starvation can interrupt speech.
+        """
+        import cv2
+        normalized = clip.path.with_name(clip.path.stem + "-play.mp4")
+        try:
+            meta = clip.metrics.get('narration', {})
+            trim = (["-ss", "0.4", "-t", str(clip.metrics['latent']['audio_seconds'])]
+                    if meta.get('trim_padding') else [])
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(clip.path), *trim,
+                "-an", "-vf", f"fps={self.fps}", "-c:v", "libx264", "-preset", "fast",
+                "-crf", "18", str(normalized)], check=True)
+            frames, _ = _read_video_frames(normalized)
+            if not frames or frames[0].shape != self.base_frames[0].shape:
+                raise RuntimeError("Generated clip dimensions do not match idle video")
+            audio = subprocess.check_output(["ffmpeg", "-v", "error", "-i", str(clip.path), *trim,
+                "-vn", "-f", "s16le", "-ar", "16000", "-ac", "1", "pipe:1"])
+            target = round(len(frames) * AUDIO_SAMPLE_RATE / self.fps) * 2
+            audio = audio[:target].ljust(target, b"\0")
+            self._talk_is_action = True
+            self._talk_queue.put(("seg", _TalkingSegment(text, audio, len(frames), meta)))
+            for frame in frames:
+                while self._running:
+                    try:
+                        self._talk_queue.put(("frame", frame), timeout=1)
+                        break
+                    except queue_mod.Full:
+                        continue
+                if not self._running:
+                    break
+            logger.info("resident complete clip queued: %d frames key=%s", len(frames), clip.s3_key)
+        except Exception:
+            self._state("render", "failed")
+            logger.exception("resident clip preparation failed")
+            self._talk_queue.put(("seg_end", None))
+        finally:
+            normalized.unlink(missing_ok=True)
+            clip.path.unlink(missing_ok=True)
 
     def _write_frame(self, frame) -> None:
         """Apply the subtitle overlay then push the frame into the pipe."""
@@ -1425,6 +1543,10 @@ def main() -> None:
     )
 
     sessions: dict[int, LiveAvatarSession] = {}
+    from streaming.relay import RelayManager
+    relay_manager = RelayManager(r, sessions)
+    relay_thread = threading.Thread(target=relay_manager.run, daemon=True, name="external-relay")
+    relay_thread.start()
     threading.Thread(
         target=_control_listener,
         args=(r, control_key, sessions, storage, work_root, fps),
@@ -1439,6 +1561,8 @@ def main() -> None:
     ).start()
 
     def _shutdown(*_args):
+        relay_manager.close()
+        relay_thread.join(timeout=5)
         logger.info("shutting down %d live session(s)", len(sessions))
         for session in sessions.values():
             session.close()

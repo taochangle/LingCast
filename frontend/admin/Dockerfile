@@ -13,6 +13,8 @@ RUN pnpm build
 
 # ---- runtime stage ----
 FROM nginx:alpine AS runner
+ARG GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$GIT_REVISION
 
 # 设置时区（可选，用于 Nginx 日志时间准确）
 ENV TZ=Asia/Shanghai

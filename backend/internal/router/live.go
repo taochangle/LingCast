@@ -5,7 +5,7 @@ import (
 
 	"talkingavatar/backend/internal/app"
 	"talkingavatar/backend/internal/config"
-		"talkingavatar/backend/internal/handlers/admin"
+	"talkingavatar/backend/internal/handlers/admin"
 	"talkingavatar/backend/internal/handlers/live"
 )
 
@@ -19,9 +19,9 @@ func RegisterLive(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 		deps.DB, deps.Queue, deps.S3,
 		cfg.LiveControlQueueKey, cfg.TaskQueueKey,
 		cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel,
-		cfg.EmbedServerURL, cfg.TTSServiceURL,
+		cfg.EmbedServerURL, cfg.TTSServiceURL, cfg.OpenAIAPI, cfg.LiveRenderEngine,
 	)
-		
+
 	api := r.Group("/api")
 	{
 		// Public avatar detail (viewer room page).

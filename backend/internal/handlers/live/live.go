@@ -18,9 +18,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"talkingavatar/backend/internal/handlers/admin"
 	"talkingavatar/backend/internal/i18n"
 	"talkingavatar/backend/internal/models"
-	"talkingavatar/backend/internal/handlers/admin"
 	"talkingavatar/backend/internal/queue"
 	"talkingavatar/backend/internal/storage"
 
@@ -122,6 +122,8 @@ type LiveHandler struct {
 	openAIAPIKey        string
 	openAIBaseURL       string
 	openAIModel         string
+	openAIAPI           string
+	residentClips       bool
 	embedServerURL      string
 	ttsServiceURL       string
 	taskQueueKey        string
@@ -217,10 +219,14 @@ type sceneVideoOption struct {
 	Description string `json:"description"`
 }
 
-func NewLiveHandler(db *gorm.DB, q *queue.Queue, s3 *storage.Client, liveControlQueueKey, taskQueueKey, openAIAPIKey, openAIBaseURL, openAIModel, embedServerURL, ttsServiceURL string) *LiveHandler {
+func NewLiveHandler(db *gorm.DB, q *queue.Queue, s3 *storage.Client, liveControlQueueKey, taskQueueKey, openAIAPIKey, openAIBaseURL, openAIModel, embedServerURL, ttsServiceURL string, apiMode ...string) *LiveHandler {
+	mode := "responses"
+	if len(apiMode) > 0 && apiMode[0] != "" {
+		mode = apiMode[0]
+	}
 	return &LiveHandler{
 		db: db, q: q, s3: s3, liveControlQueueKey: liveControlQueueKey,
-		openAIAPIKey: openAIAPIKey, openAIBaseURL: openAIBaseURL, openAIModel: openAIModel,
+		openAIAPIKey: openAIAPIKey, openAIBaseURL: openAIBaseURL, openAIModel: openAIModel, openAIAPI: mode, residentClips: len(apiMode) > 1 && apiMode[1] == "latentsync",
 		embedServerURL: embedServerURL, ttsServiceURL: ttsServiceURL,
 		taskQueueKey: taskQueueKey,
 	}
@@ -673,6 +679,9 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 	t0 := time.Now()
 	reply, ragFacts := h.llmChat(ctx, lang, userText, avatar)
 	chunks := splitSentences(reply)
+	if h.residentClips && strings.TrimSpace(reply) != "" {
+		chunks = []string{reply}
+	}
 	if len(chunks) == 0 {
 		log.Printf("[live] avatar %d empty LLM reply, skipping bot message", avatar.ID)
 		return
@@ -690,7 +699,7 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 	}
 	if err := h.db.Create(&models.LiveMessage{
 		AvatarID:   avatar.ID,
-		SenderID:     userID,
+		SenderID:   userID,
 		Username:   avatar.Name,
 		Role:       "bot",
 		Content:    cleanReply,
@@ -716,7 +725,10 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 		if b, err := json.Marshal(payload); err == nil {
 			entry = string(b)
 		}
-		_ = h.q.RPushList(ctx, key, entry)
+		if err := h.q.PushBounded(ctx, key, entry, 5); err != nil {
+			log.Printf("[live] reply queue full/unavailable: %v", err)
+			break
+		}
 		_ = h.q.RPushList(ctx, historyKey, clean)
 	}
 	_ = h.q.TrimList(ctx, historyKey, -200, -1)
@@ -815,44 +827,60 @@ func (h *LiveHandler) Chat(c *gin.Context) {
 	systemPrompt := chatSystemPrompt(avatar, i18n.Lang(c), nil, ragFacts,
 		h.chatActionVideos(avatar)...)
 
-	// ---- 3. Streaming LLM + sentence chunking ----
-	client := openai.NewClient(
-		option.WithBaseURL(strings.TrimRight(h.openAIBaseURL, "/")),
-		option.WithAPIKey(h.openAIAPIKey),
-	)
-	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
-		Model:           h.openAIModel,
-		Instructions:    openai.String(systemPrompt),
-		Input:           responses.ResponseNewParamsInputUnion{OfInputItemList: input},
-		Temperature:     openai.Float(0.8),
-		MaxOutputTokens: openai.Int(300),
-	})
-	defer stream.Close()
-
+	// ---- 3. LLM + sentence chunking ----
 	collector := &sentenceCollector{}
 	sentences := make([]string, 0, 8)
 	var reply strings.Builder
 	tStream := time.Now()
-	for stream.Next() {
-		event := stream.Current()
-		delta := event.AsResponseOutputTextDelta()
-		if delta.Type != "response.output_text.delta" {
-			continue
-		}
-		reply.WriteString(delta.Delta)
-		sentences = append(sentences, collector.feed(delta.Delta)...)
-
-		// Bail out promptly if the Gin client disconnected mid-stream.
-		if ctx.Err() != nil {
-			log.Printf("[chat] client disconnected during streaming; stopping")
+	if h.openAIAPI == "chat_completions" {
+		// The existing orchestrator queues TTS after the complete reply.
+		// Keep this behavior for non-streaming local Qwen servers.
+		text, err := h.chatCompletion(ctx, chatSystemPrompt(avatar, i18n.Lang(c), msgs, ragFacts, h.chatActionVideos(avatar)...), userText)
+		if err != nil {
+			log.Printf("[chat] LLM completion failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "LLM reply unavailable"})
 			return
 		}
-	}
-	if err := stream.Err(); err != nil {
-		log.Printf("[chat] LLM stream error (partial reply kept): %v", err)
+		reply.WriteString(text)
+		sentences = append(sentences, collector.feed(text)...)
+	} else {
+		client := openai.NewClient(
+			option.WithBaseURL(strings.TrimRight(h.openAIBaseURL, "/")),
+			option.WithAPIKey(h.openAIAPIKey),
+		)
+		stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
+			Model:           h.openAIModel,
+			Instructions:    openai.String(systemPrompt),
+			Input:           responses.ResponseNewParamsInputUnion{OfInputItemList: input},
+			Temperature:     openai.Float(0.8),
+			MaxOutputTokens: openai.Int(300),
+		})
+		defer stream.Close()
+
+		for stream.Next() {
+			event := stream.Current()
+			delta := event.AsResponseOutputTextDelta()
+			if delta.Type != "response.output_text.delta" {
+				continue
+			}
+			reply.WriteString(delta.Delta)
+			sentences = append(sentences, collector.feed(delta.Delta)...)
+
+			// Bail out promptly if the Gin client disconnected mid-stream.
+			if ctx.Err() != nil {
+				log.Printf("[chat] client disconnected during streaming; stopping")
+				return
+			}
+		}
+		if err := stream.Err(); err != nil {
+			log.Printf("[chat] LLM stream error (partial reply kept): %v", err)
+		}
 	}
 	llmStreamMs := time.Since(tStream).Milliseconds()
 	sentences = append(sentences, collector.flush()...)
+	if h.residentClips && strings.TrimSpace(reply.String()) != "" {
+		sentences = []string{reply.String()}
+	}
 
 	// ---- 4. Ordered TTS synthesis + queueing (serial => strict order) ----
 	queued := 0
@@ -885,7 +913,7 @@ func (h *LiveHandler) Chat(c *gin.Context) {
 	}
 	_ = h.db.Create(&models.LiveMessage{
 		AvatarID:   avatar.ID,
-		SenderID:     req.UserID,
+		SenderID:   req.UserID,
 		Username:   avatar.Name,
 		Role:       "bot",
 		Content:    finalReply,
@@ -908,6 +936,13 @@ func (h *LiveHandler) Chat(c *gin.Context) {
 // reads the returned S3 key and pushes a render task to the Redis queue.
 // The call is serial, which is what preserves the LLM's sentence order.
 func (h *LiveHandler) synthesizeAndEnqueue(ctx context.Context, avatar models.Avatar, sentence, actionKey string) error {
+	if h.residentClips {
+		data, err := json.Marshal(map[string]any{"text": sentence, "base_video_s3_key": actionKey, "ts": time.Now().UnixMilli()})
+		if err != nil {
+			return err
+		}
+		return h.q.PushBounded(ctx, liveQueueKey(avatar.ID), string(data), 5)
+	}
 	if strings.TrimSpace(h.ttsServiceURL) == "" {
 		return fmt.Errorf("service-tts URL not configured")
 	}
@@ -998,6 +1033,15 @@ func (h *LiveHandler) llmChat(ctx context.Context, lang, userText string, avatar
 		log.Printf("[rag] avatar %d retrieved %d fact(s)", avatar.ID, len(ragFacts))
 	}
 	tLLM := time.Now()
+	if h.openAIAPI == "chat_completions" {
+		reply, err := h.chatCompletion(ctx, chatSystemPrompt(avatar, lang, memory, ragFacts, h.chatActionVideos(avatar)...), userText)
+		if err != nil {
+			log.Printf("[llm] completion failed: %v", err)
+			return "", ragFacts
+		}
+		log.Printf("[llm] completion ready in %dms", time.Since(tLLM).Milliseconds())
+		return reply, ragFacts
+	}
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Model: h.openAIModel,
 		Instructions: openai.String(chatSystemPrompt(avatar, lang, memory, ragFacts,
@@ -1008,12 +1052,12 @@ func (h *LiveHandler) llmChat(ctx context.Context, lang, userText string, avatar
 	})
 	if err != nil {
 		log.Printf("[llm] request failed: %v", err)
-		return userText, ragFacts
+		return "", ragFacts
 	}
 	llmMs := time.Since(tLLM).Milliseconds()
 	reply := strings.TrimSpace(resp.OutputText())
 	if reply == "" {
-		return userText, ragFacts
+		return "", ragFacts
 	}
 	log.Printf("[live] avatar %d llm nodes: memory=%dms rag=%dms llm=%dms total=%dms",
 		avatar.ID, memMs, ragMs, llmMs, time.Since(tStart).Milliseconds())

@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { RelaySettings } from './relay-settings'
+import { ProjectReader } from './project-reader'
 import Player from 'xgplayer'
 import 'xgplayer/dist/index.min.css'
 import FlvPlugin from 'xgplayer-flv'
@@ -69,6 +71,23 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
   const winRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [messageText, setMessageText] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+
+  const sendMessage = async () => {
+    const text = messageText.trim()
+    if (!text || Array.from(text).length > 220 || !id || !started || sendingMessage) return
+    setSendingMessage(true)
+    try {
+      await api.post(`/live/${id}/narrate`, { text })
+      setMessageText('')
+      toast.success(i18n.language === 'en' ? 'Speech queued. Your text will be spoken as written.' : '口播已提交，数字人将按原文说出')
+    } catch (error) {
+      showApiError(error, t('common.requestFailed'))
+    } finally {
+      setSendingMessage(false)
+    }
+  }
   const [liveSettings, setLiveSettings] = useState<LiveSettings>({
     subtitleEnabled: true,
     subtitleFont: '',
@@ -402,6 +421,9 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
           </CardContent>
         </Card>
 
+        <RelaySettings key={id} avatarId={id} started={started} />
+        <ProjectReader key={`project-${id}`} avatarId={id} started={started} />
+
         <div className='grid gap-4 lg:grid-cols-4'>
           {/* Left: avatar switcher */}
           <Card className='lg:col-span-1'>
@@ -482,10 +504,27 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
 
             <Card>
               <CardHeader className='gap-1'>
-                <CardTitle>{t('live.chatTitle')}</CardTitle>
-                <CardDescription>{t('live.chatDesc')}</CardDescription>
+                <CardTitle>{i18n.language === 'en' ? 'Direct speech' : '直接口播'}</CardTitle>
+                <CardDescription>{i18n.language === 'en' ? 'Enter the words you want the avatar to say to the audience.' : '输入你希望数字人对观众说的话，按原文播放。'}</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className='flex flex-col gap-4'>
+                <form onSubmit={(event) => { event.preventDefault(); void sendMessage() }} className='flex flex-col gap-2'>
+                  <Label htmlFor='studio-message'>{i18n.language === 'en' ? 'Words to speak' : '数字人要说的话'}</Label>
+                  <div className='flex gap-2'>
+                    <Input id='studio-message' value={messageText} onChange={(event) => setMessageText(event.target.value)} disabled={sendingMessage || !started} placeholder={i18n.language === 'en' ? 'Type the words to speak, then press Enter…' : '输入口播内容，按回车开始…'} />
+                    <Button type='submit' disabled={!started || sendingMessage || !messageText.trim() || Array.from(messageText.trim()).length > 220}>
+                      {sendingMessage && <LoaderCircle className='animate-spin' data-icon='inline-start' />}
+                      {i18n.language === 'en' ? 'Speak' : '开始口播'}
+                    </Button>
+                  </div>
+                  <p className='text-xs text-muted-foreground'>
+                    {i18n.language === 'en'
+                      ? (started ? 'Up to 220 characters. One narration, split at natural pauses. The first ready segment plays while later segments generate; idle video fills any gaps.' : 'Start the live session before submitting speech.')
+                      : (started ? '最多 220 字，按原文整段配音，在自然停顿处切段。首段就绪即播，后续后台生成；未就绪时播放待机画面。' : '请先打开直播，再提交口播内容。')}
+                  </p>
+                  <p className='text-xs text-muted-foreground'>{Array.from(messageText.trim()).length}/220</p>
+                </form>
+                <p className='text-sm font-medium'>{i18n.language === 'en' ? 'Audience conversation history' : '观众互动记录'}</p>
                 {chatMessages.length === 0 ? (
                   <p className='py-4 text-center text-sm text-muted-foreground'>
                     {t('live.chatEmpty')}

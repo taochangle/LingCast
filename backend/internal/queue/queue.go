@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -76,6 +77,34 @@ type Queue struct {
 	key    string
 }
 
+func (q *Queue) ReadValue(ctx context.Context, key string) (string, error) {
+	value, err := q.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	return value, err
+}
+
+func (q *Queue) WriteValue(ctx context.Context, key, value string) error {
+	return q.client.Set(ctx, key, value, 0).Err()
+}
+
+// PushBatchBounded accepts an entire narration or none of it, preserving order.
+func (q *Queue) PushBatchBounded(ctx context.Context, key string, values []string, limit int) error {
+	args := []any{limit}
+	for _, value := range values {
+		args = append(args, value)
+	}
+	n, err := q.client.Eval(ctx, `if redis.call('LLEN', KEYS[1]) + #ARGV - 1 > tonumber(ARGV[1]) then return -1 end for i=2,#ARGV do redis.call('RPUSH', KEYS[1], ARGV[i]) end return 1`, []string{key}, args...).Int()
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return fmt.Errorf("live queue capacity reached")
+	}
+	return nil
+}
+
 func New(addr, password string, db int, key string) *Queue {
 	client := redis.NewClient(&redis.Options{
 		Addr:         addr,
@@ -135,4 +164,16 @@ func (q *Queue) Remove(ctx context.Context, key, value string) error {
 // DeleteKey removes a whole Redis key (e.g. a per-avatar live queue).
 func (q *Queue) DeleteKey(ctx context.Context, key string) error {
 	return q.client.Del(ctx, key).Err()
+}
+
+// PushBounded atomically rejects new work when a live queue reaches capacity.
+func (q *Queue) PushBounded(ctx context.Context, key, value string, limit int64) error {
+	n, err := q.client.Eval(ctx, `if redis.call('LLEN', KEYS[1]) >= tonumber(ARGV[1]) then return -1 end return redis.call('RPUSH', KEYS[1], ARGV[2])`, []string{key}, limit, value).Int64()
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return fmt.Errorf("live queue capacity reached")
+	}
+	return nil
 }

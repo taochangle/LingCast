@@ -42,3 +42,13 @@ tmp/
 worker/logs/
 # rag-service local vector/full-text data
 zvec_data/
+
+# Private production artifacts and data (never commit resolved credentials).
+/compose.json
+/migration-backup/
+/runtime/
+/admin/
+/bin/
+/deployment-systemd/
+/Dockerfile.api
+/Dockerfile.admin

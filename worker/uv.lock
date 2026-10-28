@@ -3,10 +3,10 @@ revision = 3
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version == '3.12.*' and sys_platform == 'darwin'",
     "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.12.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "python_full_version < '3.12' and sys_platform == 'darwin'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'linux'",
@@ -4046,6 +4046,18 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+benchmark = [
+    { name = "librosa" },
+    { name = "numpy" },
+    { name = "onnx", version = "1.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "onnx", version = "1.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "onnxruntime" },
+    { name = "opencv-python" },
+    { name = "pillow" },
+    { name = "scipy" },
+    { name = "soundfile" },
+    { name = "torch" },
+]
 cuda = [
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
@@ -4108,6 +4120,13 @@ models = [
     { name = "wordsegment" },
     { name = "x-transformers" },
 ]
+resident-runtime = [
+    { name = "numpy" },
+    { name = "onnxruntime" },
+    { name = "opencv-python-headless" },
+    { name = "pillow" },
+    { name = "psutil" },
+]
 rocm = [
     { name = "onnxruntime-rocm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
@@ -4123,6 +4142,17 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+benchmark = [
+    { name = "librosa", specifier = "==0.10.2" },
+    { name = "numpy", specifier = ">=1.26,<2" },
+    { name = "onnx", specifier = ">=1.16" },
+    { name = "onnxruntime", specifier = ">=1.17" },
+    { name = "opencv-python", specifier = ">=4.9" },
+    { name = "pillow", specifier = ">=10.2" },
+    { name = "scipy", specifier = ">=1.11,<1.15" },
+    { name = "soundfile", specifier = ">=0.12" },
+    { name = "torch", specifier = ">=2.2" },
+]
 cuda = [{ name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=1.17" }]
 models = [
     { name = "albumentations", specifier = ">=1.4" },
@@ -4181,6 +4211,13 @@ models = [
     { name = "tyro", specifier = ">=0.8" },
     { name = "wordsegment" },
     { name = "x-transformers" },
+]
+resident-runtime = [
+    { name = "numpy", specifier = ">=1.26,<2" },
+    { name = "onnxruntime", specifier = ">=1.17" },
+    { name = "opencv-python-headless", specifier = ">=4.9" },
+    { name = "pillow", specifier = ">=10.2" },
+    { name = "psutil", specifier = ">=6" },
 ]
 rocm = [{ name = "onnxruntime-rocm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=1.20" }]
 

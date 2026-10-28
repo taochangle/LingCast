@@ -5,7 +5,7 @@ import (
 
 	"talkingavatar/backend/internal/app"
 	"talkingavatar/backend/internal/config"
-		"talkingavatar/backend/internal/handlers/admin"
+	"talkingavatar/backend/internal/handlers/admin"
 	"talkingavatar/backend/internal/handlers/live"
 )
 
@@ -21,7 +21,7 @@ func RegisterAdmin(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 		deps.DB, deps.Queue, deps.S3,
 		cfg.LiveControlQueueKey, cfg.TaskQueueKey,
 		cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel,
-		cfg.EmbedServerURL, cfg.TTSServiceURL,
+		cfg.EmbedServerURL, cfg.TTSServiceURL, cfg.OpenAIAPI, cfg.LiveRenderEngine,
 	)
 	adminHandler := admin.NewAdminHandler(deps.DB, deps.Redis, cfg.AdminUsername, cfg.AdminPassword)
 
@@ -77,6 +77,10 @@ func RegisterAdmin(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 			protected.POST("/live/:avatarID/start", liveHandler.Start)
 			protected.POST("/live/:avatarID/stop", liveHandler.Stop)
 			protected.POST("/live/:avatarID/push", liveHandler.Push)
+			protected.GET("/live/:avatarID/relay", liveHandler.Relay)
+			protected.PUT("/live/:avatarID/relay", liveHandler.Relay)
+			protected.POST("/projects/read", liveHandler.ReadProject)
+			protected.POST("/live/:avatarID/narrate", liveHandler.NarrateProject)
 			protected.GET("/users", chatHandler.ListUsers)
 			protected.GET("/chat/logs", chatHandler.Logs)
 			protected.POST("/admin/change-name", adminHandler.ChangeName)

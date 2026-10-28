@@ -14,6 +14,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./c
 
 # ---- runtime stage ----
 FROM alpine:latest
+ARG GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$GIT_REVISION
 
 RUN apk add --no-cache ca-certificates tzdata
 

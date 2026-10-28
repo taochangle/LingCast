@@ -72,9 +72,9 @@ services:
       start_period: 20s
 
   # One-shot bootstrap: create bucket + public read policy (dev only).
-  # mc is a generic S3 client, so it works against the RustFS endpoint too.
+  # Bootstrap with the official RustFS CLI; no MinIO client image required.
   rustfs-init:
-    image: minio/mc:latest
+    image: rustfs/rc:latest
     restart: "no"
     depends_on:
       rustfs:
@@ -86,9 +86,9 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        mc alias set local http://rustfs:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" &&
-        mc mb --ignore-existing "local/$$S3_BUCKET" &&
-        mc anonymous set download "local/$$S3_BUCKET" &&
+        rc alias set local http://rustfs:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" &&
+        rc mb --ignore-existing "local/$$S3_BUCKET" &&
+        rc anonymous set download "local/$$S3_BUCKET" &&
         echo "object storage bucket ready"
 
   # ---- Application services (internal network only) ----
@@ -114,6 +114,14 @@ services:
       AVATAR_INIT_QUEUE_KEY: ${AVATAR_INIT_QUEUE_KEY:-talking_avatar:avatar_init}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      LIPSYNC_ENGINE: ${LIPSYNC_ENGINE:-wav2lip}
+      OPENAI_API: ${OPENAI_API:-responses}
+      V2_QWEN_API_KEY: ${V2_QWEN_API_KEY:-}
+      V2_QWEN_BASE_URL: ${V2_QWEN_BASE_URL:-}
+      V2_QWEN_MODEL: ${V2_QWEN_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com}
+      OPENAI_MODEL: ${OPENAI_MODEL:-deepseek-v4-flash}
       EMBED_SERVER_URL: ${EMBED_SERVER_URL:-http://service-rag:8001}
       TTS_SERVICE_URL: ${TTS_SERVICE_URL:-http://service-tts:8002}
       VIDEO_GEN_SERVICE_URL: ${VIDEO_GEN_SERVICE_URL:-http://video-gen:8003}
@@ -123,7 +131,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-talking-avatar}
       S3_USE_SSL: "false"
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:8080/media}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:${APP_PORT:-8080},http://127.0.0.1:${APP_PORT:-8080}}
     depends_on:
       mysql:
         condition: service_healthy
@@ -148,6 +156,11 @@ services:
       TASK_QUEUE_KEY: ${TASK_QUEUE_KEY:-talking_avatar:tasks}
       LIVE_CONTROL_QUEUE_KEY: ${LIVE_CONTROL_QUEUE_KEY:-talking_avatar:live_control}
       AVATAR_INIT_QUEUE_KEY: ${AVATAR_INIT_QUEUE_KEY:-talking_avatar:avatar_init}
+      LIPSYNC_ENGINE: ${LIPSYNC_ENGINE:-wav2lip}
+      OPENAI_API: ${OPENAI_API:-responses}
+      V2_QWEN_API_KEY: ${V2_QWEN_API_KEY:-}
+      V2_QWEN_BASE_URL: ${V2_QWEN_BASE_URL:-}
+      V2_QWEN_MODEL: ${V2_QWEN_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com}
       OPENAI_MODEL: ${OPENAI_MODEL:-deepseek-v4-flash}
@@ -163,7 +176,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-talking-avatar}
       S3_USE_SSL: "false"
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:8080/media}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:${APP_PORT:-8080},http://127.0.0.1:${APP_PORT:-8080}}
     depends_on:
       mysql:
         condition: service_healthy
