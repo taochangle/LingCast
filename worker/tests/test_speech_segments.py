@@ -42,12 +42,12 @@ class SpeechSegmentsTests(unittest.TestCase):
         renderer = ResidentRenderer.__new__(ResidentRenderer)
         renderer.tts_url = 'tts'
         renderer.signed = lambda *args: 'signed'
-        renderer.job = Mock(return_value={'s3_key': 'tts/narration/test/full.wav',
+        renderer.speech = Mock(return_value={'s3_key': 'tts/narration/test/full.wav',
                                           'metrics': {'audio_seconds': 6}})
         renderer.storage = Mock()
         renderer.render = Mock(side_effect=lambda *args, **kwargs:
                                CompletedClip(Path('clip.mp4'), 'clip', {'total_seconds': 1}))
-        with tempfile.TemporaryDirectory() as temp, patch('ai.speech_segments.split_speech',
+        with tempfile.TemporaryDirectory() as temp, patch.object(Path, 'read_bytes', return_value=b'pcm'), patch('ai.speech_segments.split_speech',
                 return_value=[(Path('a.wav'), 0, 3), (Path('b.wav'), 3, 6)]):
             stream = renderer.render_narration('完整的一段话', 'base', temp, 'test', 123)
             first = next(stream)
@@ -55,6 +55,6 @@ class SpeechSegmentsTests(unittest.TestCase):
             self.assertEqual(renderer.render.call_count, 1)
             second = next(stream)
             self.assertEqual(second.metrics['narration']['index'], 2)
-            self.assertEqual(renderer.job.call_count, 1)
+            self.assertEqual(renderer.speech.call_count, 1)
             with self.assertRaises(StopIteration):
                 next(stream)

@@ -345,3 +345,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
   缺文件会自动回退系统默认字体并打 warning 日志。
 - **闲置/说话切换崩溃**：两种状态的帧率与分辨率必须一致（都来自同一 base 片段）；
   视频输入带 `-re` 实时节流，勿删除。
+
+- **口播媒体缓存（2026-10-28）**：IndexTTS WAV 和 LatentSync MP4 缓存于 RustFS `cache/resident/v1/`，按台词/音色/模型指纹和素材身份复用，切段视频逐段命中。更新模型配置需重启常驻模型服务。详情见 `docs/resident-media-cache.md`。

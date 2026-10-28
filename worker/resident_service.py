@@ -45,6 +45,22 @@ def duration(path):
                                          'format=duration', '-of', 'csv=p=0', str(path)]))
 
 
+def model_cache_identity(root, mode):
+    """Metadata fingerprint: replace models/configs then restart the resident service."""
+    rows = []
+    for folder in ('checkpoints', 'configs', 'sd-vae-ft-mse', 'indextts', 'latentsync'):
+        for path in sorted((root/folder).rglob('*')):
+            if path.is_file() and '__pycache__' not in path.parts:
+                stat = path.stat()
+                rows.append((str(path.relative_to(root)), stat.st_size, stat.st_mtime_ns))
+    voice = root/'examples/voice_09.wav'
+    data = dict(mode=mode, files=rows,
+                voice=hashlib.sha256(voice.read_bytes()).hexdigest() if voice.exists() else None,
+                service=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                steps=int(os.environ.get('LATENTSYNC_STEPS', '20')) if mode == 'latentsync' else None)
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+
 class IndexTTSResident:
     def __init__(self, root):
         sys.path.insert(0, str(root))
@@ -53,6 +69,7 @@ class IndexTTSResident:
         self.model = IndexTTS2(cfg_path=str(root/'checkpoints/config.yaml'),
                                model_dir=str(root/'checkpoints'), use_bf16=True)
         self.speaker = str(root/'examples/voice_09.wav')
+        self.cache_identity = model_cache_identity(root, 'indextts')
 
     def run(self, body, work):
         text = body.get('text', '').strip()
@@ -117,6 +134,7 @@ class LatentSyncResident:
             return (faces[indices], frames[indices], [boxes[i] for i in indices],
                     [matrices[i] for i in indices])
         self.pipeline.affine_transform_video = aligned_video
+        self.cache_identity = model_cache_identity(root, 'latentsync')
 
     def run(self, body, work):
         base = work/'base.mp4'
@@ -205,7 +223,8 @@ def main():
             if self.path != '/readyz':
                 return self.send(404, {'error':'not found'})
             self.send(200 if model else 503, {'ready':bool(model), 'mode':args.mode,
-                       'pid':os.getpid(), 'loaded_at':loaded_at, 'error':error})
+                       'pid':os.getpid(), 'loaded_at':loaded_at, 'error':error,
+                       'cache_identity':getattr(model, 'cache_identity', None)})
         def do_POST(self):
             if self.path != '/v1/jobs':
                 return self.send(404, {'error':'not found'})
