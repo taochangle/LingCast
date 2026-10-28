@@ -351,3 +351,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 - **自主主持（2026-10-28）**：Live Studio HostPanel + 管理员 `/live/:avatarID/host` 接口，Redis 保存分段计划/控制/已讲进度。`worker/ai/host_director.py` 最多预备两段，手动口播队列优先，在当前短段结束后插播并继续。当前模型请求不硬中断；小红书示例已观察进入提示 DOM，但尚未自动采集或回复。见 `docs/autonomous-host.md`。
 
 - **可配置无头弹幕采集（2026-10-28，更新）**：Live Studio `XHSListener` + `/api/live/:avatarID/xhs` 保存本场分享链接、监听开关和欢迎/回复开关。`worker/xhs_collector.py` 作为独立 systemd 用户服务通过 Playwright 读取网页新增 DOM；不发送小红书网页评论。手动队列优先于 `live_external_queue:{id}`，后者优先于主持。旧房间事件通过 revision 失效。遇到登录或验证显示异常，不自动绕过。本文前述“尚未自动采集”已由本项替代，详见 `docs/xhs-listener.md`。
+
+- **采集位置更新**：用户选择本机有头浏览器，成都出口小红书返回 300012。使用 deploy/install-local-collector.py 安装本机 LaunchAgent 与 loopback SSH 隧道，XHS_BROWSER_HEADLESS=0；成都默认禁用采集服务，仍负责回复/音视频。公网不新增端口。详情见 docs/xhs-listener.md 顶部当前部署说明。

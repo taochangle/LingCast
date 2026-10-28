@@ -8,9 +8,13 @@ if test -n "$(git status --porcelain --untracked-files=no)"; then
 fi
 compose=(docker compose -p lingcast-chengdu -f docker-compose.yml -f deploy/chengdu.override.yml)
 "${compose[@]}" config --quiet
+# The normal deployment collects in the local visible browser (server IP is restricted).
+# An explicitly selected server collector still gets a browser launch preflight.
+if test "${XHS_COLLECTOR_LOCATION:-local}" = server; then
 # Complete browser download and launch preflight before stopping live services.
 (cd worker && /data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime playwright install chromium --only-shell)
 (cd worker && /data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True); b.close(); p.stop()")
+fi
 "${compose[@]}" build --build-arg "GIT_REVISION=$revision" api-admin api-live api-scheduler frontend-admin
 # Stop only after all builds succeed. Queued narration remains in Redis.
 systemctl --user stop lingcast-stream
@@ -23,8 +27,12 @@ cmp -s worker/resident_service.py /data1/taoxin/lingcast-resident/resident_servi
 mkdir -p "$HOME/.config/systemd/user"
 cp deploy/lingcast-xhs-collector.service "$HOME/.config/systemd/user/lingcast-xhs-collector.service"
 systemctl --user daemon-reload
-systemctl --user enable lingcast-xhs-collector
-systemctl --user restart lingcast-xhs-collector
+if test "${XHS_COLLECTOR_LOCATION:-local}" = server; then
+  systemctl --user enable lingcast-xhs-collector
+  systemctl --user restart lingcast-xhs-collector
+else
+  systemctl --user disable --now lingcast-xhs-collector
+fi
 systemctl --user start lingcast-stream
 for service in api-admin api-live api-scheduler frontend-admin; do
   container=$("${compose[@]}" ps -q "$service")

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import sys
 import time
 from urllib.parse import urlparse
 
@@ -75,6 +76,7 @@ class EventPolicy:
 class Collector:
     def __init__(self, client, api):
         self.redis = client
+        self.headless = os.environ.get('XHS_BROWSER_HEADLESS', '0' if sys.platform == 'darwin' else '1').lower() not in ('0','false','no')
         self.api = api.rstrip('/')
         self.tasks = {}
         self.stop = asyncio.Event()
@@ -83,7 +85,7 @@ class Collector:
 
     def status(self, avatar, config, state, **extra):
         self.redis.set(f'live_xhs_status:{avatar}',json.dumps(dict(state=state,
-            revision=config['revision'], updated_ms=int(time.time()*1000), **extra),ensure_ascii=False),ex=20)
+            revision=config['revision'], updated_ms=int(time.time()*1000), browser_mode='headless' if self.headless else 'visible', **extra),ensure_ascii=False),ex=20)
 
     async def act(self, avatar, config, event):
         # Do not let slow HTTP actions block DOM polling. Bounded at two jobs.
@@ -123,17 +125,25 @@ class Collector:
             if not allowed_room_url(config.get('url','')):
                 self.status(avatar,config,'error',message='直播间链接无效'); return
             self.status(avatar,config,'connecting')
-            context=await browser.new_context(locale='zh-CN', viewport={'width':1280,'height':800})
+            if self.headless:
+                context=await browser.new_context(locale='zh-CN', viewport={'width':1280,'height':800})
+            else:
+                profiles=Path(os.environ.get('XHS_BROWSER_PROFILE_DIR', str(Path(__file__).parent.parent/'runtime/xhs-browser')))
+                profiles.mkdir(parents=True,exist_ok=True,mode=0o700)
+                profile=profiles/f'avatar-{avatar}'
+                profile.mkdir(exist_ok=True,mode=0o700)
+                context=await self.playwright.chromium.launch_persistent_context(str(profile),
+                    headless=False,locale='zh-CN',viewport={'width':1280,'height':800})
             async def route(request_route):
                 request=request_route.request
                 parsed=urlparse(request.url)
-                if request.resource_type=='media' or re.search(r'\.(flv|m3u8|mp4)$',parsed.path,re.I):
+                if self.headless and (request.resource_type=='media' or re.search(r'\.(flv|m3u8|mp4)$',parsed.path,re.I)):
                     await request_route.abort(); return
                 if request.is_navigation_request() and request.frame==page.main_frame:
                     if parsed.scheme!='https' or parsed.hostname not in ('www.xiaohongshu.com','xiaohongshu.com','xhslink.com'):
                         await request_route.abort();return
                 await request_route.continue_()
-            page=await context.new_page()
+            page=context.pages[0] if context.pages else await context.new_page()
             await page.route('**/*',route)
             await page.goto(config['url'],wait_until='domcontentloaded',timeout=45000)
             if not allowed_room_url(page.url,short=False):
@@ -183,7 +193,8 @@ class Collector:
 
     async def run(self):
         async with async_playwright() as playwright:
-            browser=await playwright.chromium.launch(headless=True)
+            self.playwright=playwright
+            browser=await playwright.chromium.launch(headless=True) if self.headless else None
             try:
                 while not self.stop.is_set():
                     configs={}
@@ -208,13 +219,13 @@ class Collector:
                             # Navigation and history settling may take longer than a status TTL.
                             value=json.loads(self.redis.get(f'live_xhs_status:{avatar}') or '{}')
                             self.status(avatar,config,value.get('state','connecting'),
-                                        **{k:v for k,v in value.items() if k not in ('state','revision','updated_ms')})
+                                        **{k:v for k,v in value.items() if k not in ('state','revision','updated_ms','browser_mode')})
                     try:await asyncio.wait_for(self.stop.wait(),timeout=1)
                     except asyncio.TimeoutError:pass
             finally:
                 for _,task in self.tasks.values():task.cancel()
                 await asyncio.gather(*(task for _,task in self.tasks.values()),return_exceptions=True)
-                await browser.close()
+                if browser:await browser.close()
                 self.executor.shutdown(wait=False,cancel_futures=True)
 
 

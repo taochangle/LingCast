@@ -1,8 +1,18 @@
-# 小红书弹幕采集
+# 本机可见浏览器采集（当前部署）
 
-直播台「小红书弹幕监听」中的链接用于服务器无头浏览器读取网页，和 RTMP 推流配置相互独立。开播后粘贴本场完整 `xiaohongshu.com/livestream/...` 地址或 `xhslink.com` 分享文案，再点击「保存并开始监听」。每个数字人分别保存配置，刷新、服务重启后保留；更新房间或开关后重新点击开始会关闭旧页面、打开新页面并重新建立历史消息基线。
+用户已选择本机有头浏览器采集，成都服务器负责 Qwen、配音、口型和播放。成都出口访问小红书返回 300012（IP 风险），因此默认部署会禁用服务器采集服务。没有绕过验证码或平台限制。
 
-自动欢迎和 Qwen 回复默认关闭。可以先只监听，确认最近消息正常再按需要开启。采集器不会向小红书网页发送文字；回复只进入本系统数字人口播。数字人未开启时仍可采集，事件不会补排口播。只打开一个浏览器进程，每个房间独立上下文，最多同时四个房间，不使用本机浏览器的登录 Cookie。
+本机执行 `cd worker && uv run --group resident-runtime playwright install chromium --no-shell`，再执行 `uv run python ../deploy/install-local-collector.py` 安装两个登录启动的 LaunchAgent：`com.lingcast.collector-tunnel` 和 `com.lingcast.xhs-collector`。SSH 只在本机 127.0.0.1:59489 转发成都 loopback Redis 59479，公网仍只有原后台 59480；采集端 API 使用后台地址。可通过安装脚本参数调整主机别名、后台地址和本地端口。
+
+后台开启监听时，本机才会打开独立浏览器窗口；登录或验证由用户直接操作。独立资料目录 `runtime/xhs-browser/avatar-{id}` 保留浏览器会话，目录权限 700，不读取个人 Chrome 配置。关闭该窗口会停止本轮采集并显示异常，需要在后台重新开始；本机休眠/退出登录会中断采集。日志在 `runtime/local-collector/`。停止常驻采集端可执行 `launchctl bootout gui/$(id -u)/com.lingcast.xhs-collector`，隧道对应 `com.lingcast.collector-tunnel`。如更换代码目录，重新运行安装脚本。
+
+主程序读取 `XHS_BROWSER_HEADLESS=0` 使用可见持久浏览器；显式设置 1 可在可用网络的服务器使用无头模式。只有运行 `XHS_COLLECTOR_LOCATION=server bash deploy/chengdu.sh` 才会部署启动服务器采集端；默认 local 禁用它，避免两处重复监听。
+
+# 消息处理与接口
+
+直播台「小红书弹幕监听」中的链接用于采集浏览器读取网页，和 RTMP 推流配置相互独立。开播后粘贴本场完整 `xiaohongshu.com/livestream/...` 地址或 `xhslink.com` 分享文案，再点击「保存并开始监听」。每个数字人分别保存配置，刷新、服务重启后保留；更新房间或开关后重新点击开始会关闭旧页面、打开新页面并重新建立历史消息基线。
+
+自动欢迎和 Qwen 回复默认关闭。可以先只监听，确认最近消息正常再按需要开启。采集器不会向小红书网页发送文字；回复只进入本系统数字人口播。数字人未开启时仍可采集，事件不会补排口播。只打开一个浏览器进程，每个房间独立上下文，最多同时四个房间，不读取个人浏览器的登录 Cookie。
 
 页面初始化等待输入区域出现并等待历史加载，随后用 MutationObserver 读取新增 `.msg-wrapper.role-user`。过滤 `.role-host`、系统通知、点赞、分享和礼物；昵称取 `.nickname`，正文取 `.content`，图片表情用 alt 文本。`.enter-msgs` 中“来了”识别为进场。空房间也可以等待新消息。仅依赖可见网页 DOM，没有逆向私有 WebSocket 协议。
 

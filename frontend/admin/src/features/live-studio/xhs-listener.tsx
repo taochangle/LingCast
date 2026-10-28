@@ -111,14 +111,14 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
   }
   if (!Number.isFinite(avatarId) || avatarId <= 0) return null
   const state = data?.config.enabled
-    ? states[data.status?.state || ''] || '等待采集服务连接'
+    ? states[data.status?.state || ''] || '本机采集端未连接'
     : '未开启监听'
   return (
     <Card>
       <CardHeader>
         <CardTitle>小红书弹幕监听</CardTitle>
         <CardDescription>
-          开播后粘贴本场分享链接，服务器无头浏览器会打开房间读取新弹幕和进场提示；换场时更新链接即可。
+          开播后粘贴本场分享链接，本机可见浏览器会打开房间读取新弹幕和进场提示；换场时更新链接即可。
         </CardDescription>
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
@@ -201,7 +201,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
           </Alert>
         )}
         <p className='text-xs text-muted-foreground'>
-          跳过历史消息、主播发言、点赞和礼物；重复欢迎去重，同房间最多每分钟欢迎一次、每
+          本机需保持运行，登录或验证可在弹出的独立浏览器中完成。跳过历史消息、主播发言、点赞和礼物；重复欢迎去重，同房间最多每分钟欢迎一次、每
           12
           秒回复一条。手动口播优先，互动完成后继续自主主持。遇到登录或验证码会显示异常，不会自动绕过。
         </p>
