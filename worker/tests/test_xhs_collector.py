@@ -35,15 +35,16 @@ class XHSCollectorTests(unittest.TestCase):
 class XHSObserverDOMTests(unittest.TestCase):
     def test_history_host_likes_and_emoji(self):
         from playwright.sync_api import sync_playwright
-        from xhs_collector import OBSERVER
+        from xhs_collector import OBSERVER, ROOM_READY_SELECTOR
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             try:
                 page=browser.new_page()
                 page.set_content('<div class="msg-wrapper role-user"><span class="nickname">历史</span><span class="content">不要补播</span></div>')
                 # crypto.randomUUID is secure-context only; fixtures use a local origin.
-                page.route('https://collector.test/**',lambda route:route.fulfill(body='<div class="msg-wrapper role-user"><span class="nickname">历史</span><span class="content">不要补播</span></div>',content_type='text/html'))
+                page.route('https://collector.test/**',lambda route:route.fulfill(body='<div id="live-layout"><div id="input-area">说点什么</div></div><div class="msg-wrapper role-user"><span class="nickname">历史</span><span class="content">不要补播</span></div>',content_type='text/html'))
                 page.goto('https://collector.test/')
+                page.wait_for_selector(ROOM_READY_SELECTOR)
                 page.evaluate(OBSERVER)
                 self.assertEqual(page.evaluate('window.__lingcastXHS.events'),[])
                 page.evaluate('''() => {

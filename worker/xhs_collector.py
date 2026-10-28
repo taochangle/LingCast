@@ -18,6 +18,7 @@ from playwright.async_api import async_playwright
 
 logger = logging.getLogger('xhs_collector')
 OBSERVER = (Path(__file__).parent/'streaming/xhs_observer.js').read_text()
+ROOM_READY_SELECTOR = '#live-layout #input-area, .msg-content'
 
 
 def allowed_room_url(value, short=True):
@@ -138,7 +139,7 @@ class Collector:
             if not allowed_room_url(page.url,short=False):
                 self.status(avatar,config,'blocked',message='短链接未进入直播页，请粘贴浏览器中的完整直播间地址');return
             try:
-                await page.wait_for_selector('.live-layout .input-area', timeout=30000)
+                await page.wait_for_selector(ROOM_READY_SELECTOR, timeout=30000)
             except Exception:
                 body=(await page.locator('body').inner_text())[:5000]
                 state='ended' if any(word in body for word in ('直播已结束','直播结束','主播还没开播')) else 'blocked'
@@ -203,6 +204,11 @@ class Collector:
                             # Fail closed. Keep error visible until an explicit restart.
                             value=json.loads(self.redis.get(f'live_xhs_status:{avatar}') or '{}')
                             self.status(avatar,config,value.get('state','error'),message=value.get('message','请重新开始监听'))
+                        else:
+                            # Navigation and history settling may take longer than a status TTL.
+                            value=json.loads(self.redis.get(f'live_xhs_status:{avatar}') or '{}')
+                            self.status(avatar,config,value.get('state','connecting'),
+                                        **{k:v for k,v in value.items() if k not in ('state','revision','updated_ms')})
                     try:await asyncio.wait_for(self.stop.wait(),timeout=1)
                     except asyncio.TimeoutError:pass
             finally:
