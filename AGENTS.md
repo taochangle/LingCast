@@ -347,3 +347,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
   视频输入带 `-re` 实时节流，勿删除。
 
 - **口播媒体缓存（2026-10-28）**：IndexTTS WAV 和 LatentSync MP4 缓存于 RustFS `cache/resident/v1/`，按台词/音色/模型指纹和素材身份复用，切段视频逐段命中。更新模型配置需重启常驻模型服务。详情见 `docs/resident-media-cache.md`。
+
+- **自主主持（2026-10-28）**：Live Studio HostPanel + 管理员 `/live/:avatarID/host` 接口，Redis 保存分段计划/控制/已讲进度。`worker/ai/host_director.py` 最多预备两段，手动口播队列优先，在当前短段结束后插播并继续。当前模型请求不硬中断；小红书示例已观察进入提示 DOM，但尚未自动采集或回复。见 `docs/autonomous-host.md`。

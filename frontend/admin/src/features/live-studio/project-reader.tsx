@@ -19,7 +19,7 @@ function errorMessage(error: unknown) {
   return (error as { response?: { data?: { error?: string } } }).response?.data?.error || '请求失败，请稍后重试'
 }
 
-export function ProjectReader({ avatarId, started }: { avatarId: number; started: boolean }) {
+export function ProjectReader({ avatarId, started, onMaterial }: { avatarId: number; started: boolean; onMaterial?: (topic: string, text: string) => void }) {
   const [url, setUrl] = useState('')
   const [focus, setFocus] = useState('介绍项目用途、技术栈和核心实现')
   const [result, setResult] = useState<ProjectResult | null>(null)
@@ -82,6 +82,7 @@ export function ProjectReader({ avatarId, started }: { avatarId: number; started
           <p className='text-xs text-muted-foreground'>{Array.from(script.trim()).length}/220 字。整段配音一次，按自然停顿切段；首段就绪即播，后续后台生成，未就绪时回到待机。</p>
           <div><Button onClick={() => void speak()} disabled={!started || sending || submitted || !script.trim() || Array.from(script.trim()).length > 220}>{sending ? '提交中…' : submitted ? '已提交讲解' : '按原文讲解'}</Button></div>
           {!started && <p className='text-sm text-muted-foreground'>请先点击右上角「打开直播」，再提交讲解。</p>}
+          <div><Button variant='outline' onClick={() => { onMaterial?.(`介绍 ${result.repository}`, `仓库：${result.repository}\n提交版本：${result.commit}\n速读结论（仅部分文件）：${script}`); toast.success('已导入下方自主主持参考资料') }}>用作自主主持资料</Button></div>
           <details>
             <summary className='cursor-pointer text-sm'>查看读取依据</summary>
             <ul className='mt-2 flex flex-col gap-1 text-sm'>{result.sources.map((source) => <li key={source.path}><a className='underline' href={source.url} target='_blank' rel='noreferrer'>{source.path}</a>{source.truncated ? '（节选）' : ''}</li>)}</ul>

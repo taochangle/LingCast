@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { RelaySettings } from './relay-settings'
 import { ProjectReader } from './project-reader'
+import { HostPanel } from './host-panel'
 import Player from 'xgplayer'
 import 'xgplayer/dist/index.min.css'
 import FlvPlugin from 'xgplayer-flv'
@@ -60,6 +61,7 @@ const DEFAULT_IDLE_MOTION = {
 export function LiveStudio({ avatarId }: { avatarId: string }) {
   const { t, i18n } = useTranslation()
   const id = Number(avatarId)
+  const [hostMaterial, setHostMaterial] = useState<{ topic: string; text: string; version: number } | null>(null)
   const navigate = useNavigate()
   const playerHostRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<Player | null>(null)
@@ -422,7 +424,8 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
         </Card>
 
         <RelaySettings key={id} avatarId={id} started={started} />
-        <ProjectReader key={`project-${id}`} avatarId={id} started={started} />
+        <ProjectReader key={`project-${id}`} avatarId={id} started={started} onMaterial={(topic, text) => setHostMaterial({ topic, text, version: Date.now() })} />
+        <HostPanel key={`host-${id}-${hostMaterial?.version || 0}`} avatarId={id} started={started} material={hostMaterial} />
 
         <div className='grid gap-4 lg:grid-cols-4'>
           {/* Left: avatar switcher */}

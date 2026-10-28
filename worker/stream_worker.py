@@ -54,6 +54,7 @@ import redis
 from storage import S3Storage
 import numpy as np
 from ai.resident_client import ResidentRenderer, CompletedClip
+from ai.host_director import HostDirector
 from streaming.ffmpeg_pipe import AUDIO_SAMPLE_RATE, FFmpegPipeClosedError
 from worker import (
     _check_required_env,
@@ -934,6 +935,24 @@ class LiveAvatarSession:
         except queue_mod.Empty:
             pass
 
+        if self.resident:
+            if not hasattr(self, '_host_director'):
+                self._host_director = HostDirector(self.avatar_id)
+            idle = (not (self._tts_thread and self._tts_thread.is_alive())
+                    and not (self._produce_thread and self._produce_thread.is_alive())
+                    and self._pending.empty() and self._tts_results.empty()
+                    and self._talk_queue.empty()
+                    and r.hget(f'live_playback:{self.avatar_id}', 'playback') != 'playing')
+            manual_busy = bool(r.llen(self.queue_key) or
+                              (self._tts_thread and self._tts_thread.is_alive()) or
+                              not self._pending.empty() or not self._tts_results.empty())
+            with self._idle_lock:
+                base_key = self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)]
+            item = self._host_director.tick(r, self.resident, base_key, self.work_dir, idle, manual_busy)
+            if item:
+                text, clip = item
+                self._pending.put((text, clip, base_key, time.perf_counter()))
+
         # 3) Start the frame producer when it is idle and work is pending.
         if (
             self._produce_thread is None or not self._produce_thread.is_alive()
@@ -1303,6 +1322,8 @@ class LiveAvatarSession:
 
     def close(self) -> None:
         self._running = False
+        if hasattr(self, '_host_director'):
+            self._host_director.close()
         for thread in (self._writer_thread, self._feed_thread, self._produce_thread):
             if (
                 thread is not None
