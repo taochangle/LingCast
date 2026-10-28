@@ -13,15 +13,16 @@ RUN pnpm build
 
 # ---- runtime stage ----
 FROM nginx:alpine AS runner
-ARG GIT_REVISION=unknown
-LABEL org.opencontainers.image.revision=$GIT_REVISION
 
 # 设置时区（可选，用于 Nginx 日志时间准确）
 ENV TZ=Asia/Shanghai
-RUN apk add --no-cache tzdata
+RUN apk info -e tzdata >/dev/null || apk add --no-cache tzdata
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
+
+ARG GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$GIT_REVISION
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
