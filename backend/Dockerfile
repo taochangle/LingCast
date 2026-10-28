@@ -16,12 +16,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./c
 
 # ---- runtime stage ----
 FROM alpine:latest
-ARG GIT_REVISION=unknown
-LABEL org.opencontainers.image.revision=$GIT_REVISION
 
-RUN apk add --no-cache ca-certificates tzdata
+ARG APK_MIRROR=dl-cdn.alpinelinux.org
+RUN sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories \
+    && apk add --timeout 30 --no-cache ca-certificates tzdata
 
 COPY --from=builder /out/api /usr/local/bin/api
+
+ARG GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$GIT_REVISION
 
 EXPOSE 8081
 ENTRYPOINT ["api"]

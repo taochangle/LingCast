@@ -12,6 +12,7 @@ services:
     build:
       args:
         GOPROXY: https://goproxy.cn,direct
+        APK_MIRROR: mirrors.aliyun.com
     networks: [default, qwen]
     environment:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
@@ -22,6 +23,7 @@ services:
     build:
       args:
         GOPROXY: https://goproxy.cn,direct
+        APK_MIRROR: mirrors.aliyun.com
     networks: [default, qwen]
     environment:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
@@ -32,6 +34,7 @@ services:
     build:
       args:
         GOPROXY: https://goproxy.cn,direct
+        APK_MIRROR: mirrors.aliyun.com
     environment:
       S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
 networks:
