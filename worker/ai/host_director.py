@@ -8,8 +8,12 @@ import time
 import copy
 import shutil
 import uuid
+import threading
 
 logger = logging.getLogger(__name__)
+
+# All avatars share the single resident GPU service. Do not race model requests.
+_prepare_lock = threading.Lock()
 
 
 class HostDirector:
@@ -114,10 +118,11 @@ class HostDirector:
         if not self.future and (library or len(self.ready) < 2) and index < len(scripts) and not manual_busy:
             text = scripts[index]
             def prepare(text=text, index=index, config=config, base_key=base_key):
-                clip = renderer.render(text, base_key, work_dir)
-                clip.metrics['narration'] = dict(job_id=f"{config['run_id']}-{index}", index=1,
-                    count=1, submitted_ms=0, trim_padding=True, host_run_id=config['run_id'])
-                return text, clip
+                with _prepare_lock:
+                    clip = renderer.render(text, base_key, work_dir)
+                    clip.metrics['narration'] = dict(job_id=f"{config['run_id']}-{index}", index=1,
+                        count=1, submitted_ms=0, trim_padding=True, host_run_id=config['run_id'])
+                    return text, clip
             self.future = (config['run_id'], index, self.executor.submit(prepare))
 
         if library and len(self.library) == len(scripts) and not self.active and pipeline_idle and not manual_busy and time.monotonic() >= self.due:

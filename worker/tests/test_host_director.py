@@ -145,6 +145,38 @@ class HostDirectorTests(unittest.TestCase):
         self.assertIsNone(self.tick())
         self.assertFalse(self.director.library)
 
+    def test_preparation_is_serialized_between_avatars(self):
+        from threading import Event, Lock
+        from concurrent.futures import ThreadPoolExecutor
+        entered = Event()
+        release = Event()
+        counter_lock = Lock()
+        calls = []
+        def render(text, base, directory):
+            with counter_lock:
+                calls.append(text)
+                first = len(calls) == 1
+            if first:
+                entered.set()
+                release.wait(3)
+            path = Path(directory)/(text+'.mp4')
+            path.write_bytes(b'video')
+            return CompletedClip(path, 'cache', {})
+        self.renderer.render.side_effect = render
+        other_config = dict(self.config, run_id='other')
+        self.objects['live_host:2'] = json.dumps(other_config)
+        self.director.executor = ThreadPoolExecutor(max_workers=1)
+        other = HostDirector(2)
+        self.addCleanup(other.close)
+        self.tick()
+        self.assertTrue(entered.wait(2))
+        other.tick(self.redis, self.renderer, 'base', self.temp.name, True, False)
+        self.assertEqual(len(calls), 1)
+        release.set()
+        self.director.future[2].result(timeout=3)
+        other.future[2].result(timeout=3)
+        self.assertEqual(len(calls), 2)
+
     def test_library_base_change_requires_new_run(self):
         self.config.update(kind='library', welcome_count=1); self.save()
         self.tick()
