@@ -938,11 +938,12 @@ class LiveAvatarSession:
         if self.resident:
             if not hasattr(self, '_host_director'):
                 self._host_director = HostDirector(self.avatar_id)
+            playback = r.hgetall(f'live_playback:{self.avatar_id}')
             idle = (not (self._tts_thread and self._tts_thread.is_alive())
                     and not (self._produce_thread and self._produce_thread.is_alive())
                     and self._pending.empty() and self._tts_results.empty()
                     and self._talk_queue.empty()
-                    and r.hget(f'live_playback:{self.avatar_id}', 'playback') != 'playing')
+                    and playback.get('playback') != 'playing')
             manual_busy = bool(r.llen(self.queue_key) or
                               (self._tts_thread and self._tts_thread.is_alive()) or
                               not self._pending.empty() or not self._tts_results.empty())

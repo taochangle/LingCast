@@ -43,3 +43,27 @@ func TestHostPlanRejectsBadModelOutput(t *testing.T) {
 		model.Close()
 	}
 }
+
+func TestHostPlanRepairsOverlongModelParagraph(t *testing.T) {
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		output := `["修正后是一段完整的短讲稿。"]`
+		if calls == 1 {
+			data, _ := json.Marshal([]string{strings.Repeat("长", 80)})
+			output = string(data)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": output}, "finish_reason": "stop"}}})
+	}))
+	defer model.Close()
+	h := LiveHandler{openAIBaseURL: model.URL, openAIModel: "qwen35"}
+	router := gin.New()
+	router.POST("/plan", h.HostPlan)
+	request := httptest.NewRequest("POST", "/plan", strings.NewReader(`{"topic":"介绍系统"}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != 200 || calls != 2 {
+		t.Fatalf("status=%d calls=%d body=%s", recorder.Code, calls, recorder.Body.String())
+	}
+}

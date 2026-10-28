@@ -61,6 +61,25 @@ class HostDirectorTests(unittest.TestCase):
         self.assertEqual((state['phase'],state['completed']),('finished',3))
         self.assertEqual(self.renderer.render.call_count,3)
 
+    def test_async_prefetch_keeps_its_own_text_and_index(self):
+        pending = []
+        def submit(fn):
+            future = Future()
+            pending.append((fn, future))
+            return future
+        self.director.executor.submit = submit
+        self.tick()
+        fn, future = pending.pop(0)
+        future.set_result(fn())
+        first = self.tick()  # schedules paragraph 2, then pops paragraph 1
+        self.assertEqual(first[0], self.config['scripts'][0])
+        fn, future = pending.pop(0)
+        future.set_result(fn())  # execution happens after the pop reassigned locals
+        second = self.tick()
+        self.assertEqual(second[0], self.config['scripts'][1])
+        self.assertEqual(second[1].metrics['narration']['job_id'], 'host-test-1')
+        self.assertEqual(self.renderer.render.call_args.args[0], self.config['scripts'][1])
+
     def test_pause_stop_and_restart_resume(self):
         self.tick()
         self.config.update(mode='paused',command='2'); self.save()

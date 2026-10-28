@@ -97,7 +97,7 @@ class HostDirector:
         index = self.completed + int(self.active) + len(self.ready)
         if not self.future and len(self.ready) < 2 and index < len(scripts) and not manual_busy:
             text = scripts[index]
-            def prepare():
+            def prepare(text=text, index=index, config=config, base_key=base_key):
                 clip = renderer.render(text, base_key, work_dir)
                 clip.metrics['narration'] = dict(job_id=f"{config['run_id']}-{index}", index=1,
                     count=1, submitted_ms=0, trim_padding=True, host_run_id=config['run_id'])
