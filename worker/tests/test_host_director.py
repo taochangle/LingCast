@@ -115,5 +115,42 @@ class HostDirectorTests(unittest.TestCase):
         self.tick()
         self.assertIsNotNone(self.tick())
 
+    def test_library_prepares_all_then_replays_without_model_calls(self):
+        self.config.update(kind='library', welcome_count=2,
+                           scripts=['欢迎来坐一会儿。', '欢迎来到这里。', '我是数字人知夏。', '今天放松一下吧。'])
+        self.save()
+        for _ in range(4):
+            self.assertIsNone(self.tick())
+        self.assertEqual(self.renderer.render.call_count, 4)
+        seen = []
+        for _ in range(12):
+            item = self.tick()
+            self.assertIsNotNone(item)
+            seen.append(item[0])
+            item[1].path.unlink()  # stream consumer owns and removes only playback copy
+        self.assertEqual(self.renderer.render.call_count, 4)
+        for offset in [0, 4, 8]:
+            self.assertEqual(set(seen[offset:offset+4]), set(self.config['scripts']))
+            self.assertIn(seen[offset], self.config['scripts'][:2])
+            self.assertIn(seen[offset+1], self.config['scripts'][2:])
+        self.assertEqual(len(self.director.library), 4)
+        self.assertEqual(json.loads(self.objects['live_host_status:1'])['phase'], 'speaking')
+        self.assertTrue(all(c.path.exists() for _, c in self.director.library.values()))
+        self.assertIsNone(self.tick(manual=True))
+        self.config.update(mode='paused', command='pause'); self.save()
+        self.assertIsNone(self.tick())
+        self.config.update(mode='running', command='resume'); self.save()
+        self.assertIsNotNone(self.tick())
+        self.config.update(mode='stopped', command='stop'); self.save()
+        self.assertIsNone(self.tick())
+        self.assertFalse(self.director.library)
+
+    def test_library_base_change_requires_new_run(self):
+        self.config.update(kind='library', welcome_count=1); self.save()
+        self.tick()
+        self.director.tick(self.redis, self.renderer, 'different-base', self.temp.name, True, False)
+        self.assertIn('底片', self.director.error)
+        self.assertEqual(json.loads(self.objects['live_host_status:1'])['phase'], 'failed')
+
 
 if __name__=='__main__': unittest.main()

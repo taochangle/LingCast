@@ -16,7 +16,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 
 type HostState = {
-  config: { run_id?: string; mode?: string; scripts?: string[] }
+  config: { run_id?: string; mode?: string; scripts?: string[]; kind?: string }
+  library: string[]
   status: {
     phase: string
     completed: number
@@ -50,7 +51,9 @@ export function HostPanel({
   started: boolean
   material: { topic: string; text: string } | null
 }) {
-  const [topic, setTopic] = useState(material?.topic || '聊聊开源项目的用途、架构和上手方法')
+  const [topic, setTopic] = useState(
+    material?.topic || '欢迎朋友们，轻松聊聊日常生活'
+  )
   const [source, setSource] = useState(material?.text || '')
   const [script, setScript] = useState('')
   const [minPause, setMinPause] = useState(10)
@@ -132,10 +135,48 @@ export function HostPanel({
       <CardHeader>
         <CardTitle>自主主持</CardTitle>
         <CardDescription>
-          先预览分段讲稿，再自动讲一轮。手动口播在当前短段结束后优先播放，播完继续主持。
+          话术库准备好后持续循环；也可以在下方自定义一轮讲稿。手动口播在当前短段结束后优先播放。
         </CardDescription>
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
+        <section
+          aria-label='欢迎话术库'
+          className='flex flex-col gap-3 rounded-md border p-4'
+        >
+          <h3 className='font-medium'>欢迎与陪伴 · 预生成话术库</h3>
+          <p className='text-sm text-muted-foreground'>
+            {state?.library?.length || 24}{' '}
+            条话术，欢迎优先，穿插自我介绍、日常闲聊与轻松互动。
+            首次全部生成后开始循环，段间停顿 2～4
+            秒；播放期间直接复用视频，手动口播优先。
+          </p>
+          <div>
+            <Button
+              disabled={busy || !started || active}
+              onClick={() => void control('start_library')}
+            >
+              准备话术库并循环主持
+            </Button>
+          </div>
+          {!started && (
+            <p className='text-xs text-muted-foreground'>
+              请先打开数字人直播，再准备话术库。
+            </p>
+          )}
+          <details>
+            <summary className='cursor-pointer text-sm'>预览全部话术</summary>
+            <ol className='mt-2 list-decimal pl-5 text-sm'>
+              {state?.library?.map((text, index) => (
+                <li className='mb-2' key={index}>
+                  {text}
+                </li>
+              ))}
+            </ol>
+          </details>
+          <p className='text-xs text-muted-foreground'>
+            首次准备需要等待，可查看下方进度。后续同素材、音色和模型配置复用缓存；暂停、继续和结束使用下方按钮。
+          </p>
+        </section>
         <form
           className='flex flex-col gap-3'
           onSubmit={(event) => {
@@ -247,8 +288,14 @@ export function HostPanel({
         </div>
         {state?.status && (
           <p role='status' className='text-sm text-muted-foreground'>
-            已讲 {state.status.completed}/{state.status.total} 段 · 已准备{' '}
-            {state.status.prepared} 段{!started ? ' · 请先打开直播' : ''}
+            {state.config.kind === 'library'
+              ? `已循环播放 ${state.status.completed} 条 · 话术库`
+              : `已讲 ${state.status.completed}/${state.status.total} 段 · 已准备`}{' '}
+            {state.status.prepared}
+            {state.config.kind === 'library'
+              ? `/${state.status.total} 条已准备`
+              : ' 段'}
+            {!started ? ' · 请先打开直播' : ''}
           </p>
         )}
         {state?.config.scripts?.length ? (

@@ -67,3 +67,26 @@ func TestHostPlanRepairsOverlongModelParagraph(t *testing.T) {
 		t.Fatalf("status=%d calls=%d body=%s", recorder.Code, calls, recorder.Body.String())
 	}
 }
+
+func TestWelcomeLibrary(t *testing.T) {
+	scripts := hostLibrary("沈若棠")
+	if len(scripts) != 24 {
+		t.Fatalf("unexpected size: %d", len(scripts))
+	}
+	seen := map[string]bool{}
+	for i, text := range scripts {
+		if seen[text] {
+			t.Fatalf("duplicate: %s", text)
+		}
+		seen[text] = true
+		if err := validateHostScripts([]string{text}); err != nil {
+			t.Fatal(err)
+		}
+		if i < 12 && !strings.Contains(text, "欢迎") {
+			t.Fatalf("welcome missing: %s", text)
+		}
+	}
+	if !strings.Contains(strings.Join(scripts, ""), "沈若棠") {
+		t.Fatal("name missing")
+	}
+}
