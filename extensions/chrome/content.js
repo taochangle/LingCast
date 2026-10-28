@@ -10,11 +10,13 @@
     if(!retry.length && Date.now()-lastSent<10000) return;
     waiting=true;
     const batch=retry.slice(0,20);
+    const requestedRevision=revision;
     try {
       const result=await chrome.runtime.sendMessage({type:'LC_EVENTS',revision,page_room:location.origin+location.pathname,events:batch,dom:globalThis.LingCastDOM.status()});
+      if(requestedRevision!==revision) return;
       if(result?.ok) { retry.splice(0,batch.length);lastSent=Date.now(); }
       if(result?.stop) stop();
-    } catch { stop(); } finally { waiting=false; }
+    } catch { if(requestedRevision===revision) stop(); } finally { waiting=false; }
   }
   chrome.runtime.onMessage.addListener((message,_sender,respond)=>{
     if(message.type==='LC_BEGIN') {
