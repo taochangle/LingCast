@@ -134,7 +134,14 @@ func (h *LiveHandler) processStreamingReply(ctx context.Context, lang, userText 
 		return "", 0
 	}
 	started := time.Now()
-	facts := h.retrieveKnowledge(ctx, avatar.ID, userText, 500*time.Millisecond)
+	programme := ""
+	if scope != nil {
+		programme = requestedProgramme(userText)
+	}
+	var facts []string
+	if programme == "" {
+		facts = h.retrieveKnowledge(ctx, avatar.ID, userText, 500*time.Millisecond)
+	}
 	system := chatSystemPrompt(avatar, lang, nil, nil)
 	userContext := liveUserContext(userText, h.recentMessages(avatar.ID, 10), facts)
 	spoken := []string{}
@@ -142,7 +149,10 @@ func (h *LiveHandler) processStreamingReply(ctx context.Context, lang, userText 
 	if scope != nil {
 		key = fmt.Sprintf("live_external_queue:%d", avatar.ID)
 	}
-	_, err := h.streamCompletion(ctx, system, userContext, func(sentence string) error {
+	emit := func(sentence string) error {
+		if blockedLiveSpeech(sentence) {
+			return fmt.Errorf("speech blocked")
+		}
 		if !h.xhsReplyAllowed(ctx, avatar.ID, scope) {
 			return fmt.Errorf("room changed")
 		}
@@ -158,7 +168,13 @@ func (h *LiveHandler) processStreamingReply(ctx context.Context, lang, userText 
 		_ = h.q.RPushList(ctx, liveHistoryKey(avatar.ID), sentence)
 		log.Printf("[QWEN_STREAM] avatar=%d sentence=%d queued_after_ms=%d", avatar.ID, len(spoken), time.Since(started).Milliseconds())
 		return nil
-	})
+	}
+	var err error
+	if programme != "" {
+		err = emit(programmeSpeech(programme))
+	} else {
+		_, err = h.streamCompletion(ctx, system, userContext, emit)
+	}
 	if err != nil {
 		log.Printf("[QWEN_STREAM] avatar=%d stopped: %v", avatar.ID, err)
 	}

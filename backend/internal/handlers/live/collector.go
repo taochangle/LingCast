@@ -328,7 +328,7 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 					replyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					go func(e collectorEvent, revision int64) {
 						defer cancel()
-						h.processChatReply(replyCtx, "zh", "直播间观众「"+e.Nickname+"」说："+e.Text, avatar, 0, &xhsReplyScope{Revision: revision})
+						h.processChatReply(replyCtx, "zh", e.Text, avatar, 0, &xhsReplyScope{Revision: revision})
 					}(e, req.Revision)
 				}
 			}

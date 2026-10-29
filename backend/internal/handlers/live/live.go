@@ -709,7 +709,13 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 		return
 	}
 	t0 := time.Now()
-	reply, ragFacts := h.llmChat(ctx, lang, userText, avatar)
+	var reply string
+	var ragFacts []string
+	if scope != nil && requestedProgramme(userText) != "" {
+		reply = programmeSpeech(requestedProgramme(userText))
+	} else {
+		reply, ragFacts = h.llmChat(ctx, lang, userText, avatar)
+	}
 	if blockedLiveSpeech(reply) {
 		return
 	}
