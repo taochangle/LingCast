@@ -13,6 +13,8 @@
 [Roadmap / TODO](docs/TODO.md) · [开发交接说明](AGENTS.md) ·
 [文档站点](https://taochangle.github.io/LingCast/)
 
+成都当前部署：**Qwen 流式 → CosyVoice → MuseTalk**，使用 Chrome 插件读取直播互动。播放顺序为手动口播 → 评论回复 → 欢迎 → 自主主持。见[实时直播链路](docs/cosyvoice-musetalk-live.md)和[插件采集](docs/chrome-collector.md)；下方通用安装说明仍包含旧引擎。
+
 # Contents
 
 - [为什么做](#为什么做)

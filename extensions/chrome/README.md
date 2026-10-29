@@ -11,7 +11,7 @@
 
 权限：activeTab + scripting 仅手动授权的当前页；storage 保存连接配置；alarms 检查页面连接。optional_host_permissions 仅声明固定的 http://127.0.0.1 主机，点击开始时申请该主机权限，不声明所有站点。请求不携带后台 Cookie。当前后台是 HTTP，公网传输无加密；未来切换 HTTPS 时需同步更新插件固定地址。
 
-服务端按数字人绑定密钥（仅存 SHA256）、直播房间和会话版本校验；丢弃过期、重复消息，限制批量、频率和待播队列。当前成都直播使用 Qwen 流式 → CosyVoice 音频流 → MuseTalk 画面流；欢迎和回复各最多2秒触发一次，仍受有限队列与当前口播进度限制。插件解决采集，不绕过模型生成耗时。手动口播优先于互动，互动优先于主持。虚拟列表、DOM 结构变更和页面暂停可能导致漏读，不能保证平台限制豁免；遇到登录验证请手动处理。
+服务端按数字人绑定密钥（仅存 SHA256）、直播房间和会话版本校验；丢弃过期、重复消息，限制批量、频率和待播队列。当前成都直播使用 Qwen 流式 → CosyVoice 音频流 → MuseTalk 画面流；欢迎和回复各最多2秒触发一次，仍受有限队列与当前口播进度限制。插件解决采集，不绕过模型生成耗时。播放顺序为手动口播 → 评论回复 → 欢迎 → 自主主持。评论与欢迎独立排队，欢迎排满不会挡住评论；已开始的口播先讲完，再按优先级取下一项。虚拟列表、DOM 结构变更和页面暂停可能导致漏读，不能保证平台限制豁免；遇到登录验证请手动处理。
 
 开发：`node --test extensions/chrome/tests/*.test.mjs`；DOM fixture 测试 `cd worker && uv run python -m unittest tests.test_chrome_collector`，测试使用隔离本地页面，不自动打开真实直播间。打包 `python3 extensions/package_chrome.py`，ZIP 与源码同步提交。
 

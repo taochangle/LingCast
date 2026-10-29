@@ -14,6 +14,8 @@ Admin console `:8080` · Viewer app `:3000` · [Architecture doc](docs/技术需
 [Roadmap / TODO](docs/TODO.md) · [Development handoff](AGENTS.md) ·
 [Documentation site](https://taochangle.github.io/LingCast/)
 
+Current Chengdu deployment: **Qwen streaming → CosyVoice → MuseTalk**, with Chrome DOM collection. Playback priority: manual speech → comment replies → welcomes → autonomous hosting. See [live pipeline](docs/cosyvoice-musetalk-live.md) and [Chrome collector](docs/chrome-collector.md). The general setup below also documents the older engines.
+
 # Contents
 
 - [Why](#why)

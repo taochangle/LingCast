@@ -1,4 +1,4 @@
-# 成都服务器部署（2026-10-28）
+# 成都服务器部署（2026-10-29 更新）
 
 ## 当前版本发布方式（取代迁移时的构建方式）
 
@@ -6,29 +6,31 @@
 
 部署入口已改为版本管理内的根 docker-compose.yml + deploy/chengdu.override.yml，项目名和数据卷继续用 lingcast-chengdu；私有 `.env`、worker/.env.local、模型 resident.env、数据库及素材不进 Git。迁移时的私有 compose.json 留作回退备份，后续不要混用它部署。模型服务源码也从当前 Git 提交安装，而非从本地手工传文件。
 
-本次口播分段：后端提交一个完整讲稿任务，IndexTTS 整段配音一次；Worker 用静音检测寻找自然停顿，目标每段约 2–4 秒，优先保证不切断词语。无停顿的长句会保留到下一处停顿（最长 18 秒），无法安全切分则报错要求增加标点。PCM 片段首尾相接、样本不丢失；每段 LatentSync 完成立即进入播放队列，同时后台继续下一段。播放时裁去模型人为添加的首尾静音。生成速度尚慢于播放，片段间仍可能回到待机。
+当前直播链路为 Qwen SSE → CosyVoice音频流 → MuseTalk逐帧 → FFmpeg/SRS；手动口播按原文生成。优先级为手动口播 → 评论回复 → 欢迎 → 自主主持，评论和欢迎分别排队。常驻配置、素材映射、缓存与回滚见 [流式直播链路](cosyvoice-musetalk-live.md)。IndexTTS/LatentSync 保留作旧模式和回滚使用。
 
 当前直播系统运行于 `chengdu-taoxin`（127.0.0.1），目录 `/data1/taoxin/LingCast`，后台 `http://127.0.0.1:59480`。本机原实例已停止，数据卷和源码保留；恢复本机前先停远程 Worker，避免两套同时处理/推流。
 
 ## 网络
 
-本次部署仅对外发布 59480。MariaDB 不发布宿主机端口。Redis 127.0.0.1:59479、RustFS 127.0.0.1:59478、SRS RTMP 127.0.0.1:59481 供原生 Worker 使用；模型服务 127.0.0.1:59411/59412。浏览器素材和 HTTP-FLV 都经 59480 的 nginx 网关。
+本次部署仅对外发布 59480。MariaDB 不发布宿主机端口。Redis 127.0.0.1:59479、RustFS 127.0.0.1:59478、SRS RTMP 127.0.0.1:59481 供原生 Worker 使用；当前CosyVoice/MuseTalk模型服务 127.0.0.1:59495/59496，旧模型仍为127.0.0.1:59411/59412。浏览器素材和 HTTP-FLV 都经 59480 的 nginx 网关。
 
 Qwen 已在现有 `vllm` 容器中。api-admin/api-live 加入其外部网络 `vllm_default`，使用 `http://vllm:8000/v1`，不绕公网 IP 或宿主机 18003。其他应用已有端口不在本次迁移变更范围。
 
 ## 运行与更新
 
-服务器私有 `compose.json` 是部署入口，内含展开的凭据，权限 600，不入 Git。Compose 项目名 `lingcast-chengdu`，使用独立数据卷，不覆盖服务器其他项目。API 为本机交叉编译的 Linux amd64 二进制，管理端为编译后的静态资源；部署 Dockerfile.api/Dockerfile.admin 基于服务器既有 nginx:alpine 镜像构建。
+当前使用仓库根Compose和成都override；不再执行私有compose.json。
 
-```
+```bash
 cd /data1/taoxin/LingCast
-docker compose -f compose.json ps
-docker compose -f compose.json up -d
-systemctl --user status lingcast-indextts lingcast-latentsync lingcast-stream
+git pull --ff-only origin main
+bash deploy/chengdu.sh
+docker compose -p lingcast-chengdu -f docker-compose.yml -f deploy/chengdu.override.yml ps
+systemctl --user status lingcast-cosyvoice lingcast-musetalk lingcast-stream
 journalctl --user -u lingcast-stream -f
+cat runtime/deployed-revision
 ```
 
-模型仍使用既有 `/data1/taoxin/index-tts/.venv` 和 `/data1/taoxin/avatar/.venv-latentsync`，服务源码/私有环境文件在 `/data1/taoxin/lingcast-resident`；S3 白名单已改成 127.0.0.1:59478。原生流 Worker 用独立 `resident-runtime` 依赖组，不重复安装 GPU 模型。用户 systemd 配置在 `~/.config/systemd/user/lingcast-*.service`，已启用 Linger，可开机启动；Worker 启动前等待 API 和模型 ready，最长 300 秒。Docker 服务设置 unless-stopped。
+CosyVoice和MuseTalk使用各自独立模型环境，原生Worker使用 `resident-runtime` 依赖组。systemd用户单元位于 `~/.config/systemd/user/`，已启用Linger。启动等待模型及API ready，当前等待上限300秒；首次冷启动超时的处理见流式链路文档，不能仅凭进程active判断预热完成。数据库、素材、Redis配置和采集密钥在发布时保留。
 
 ## 备份和恢复
 
@@ -44,4 +46,4 @@ journalctl --user -u lingcast-stream -f
 
 回退本机：先在远程停止 lingcast-stream，并停止对外推流；再从原本的本机项目目录启动 Docker 基础服务、API 和管理端，恢复 resident.env 的旧 S3 端点并重建 SSH 转发，最后运行本地 Worker。本地原数据卷没有删除；若回退到迁移快照，可用 SQL、S3 对象和 Redis 记录备份恢复。切勿同时恢复两侧 Worker。
 
-短句验证：迁移后「大家好，欢迎来到直播间。」提交至第一帧说话约 18.54 秒，生成约 17.81 秒，22.55 秒时播放完并返回待机。此为特定短句单次测量，不代表所有输入的延迟，也不是严格迁移前后性能对照。
+历史 IndexTTS/LatentSync 短句验证（不代表当前流式模式）：迁移后「大家好，欢迎来到直播间。」提交至第一帧说话约 18.54 秒，生成约 17.81 秒，22.55 秒时播放完并返回待机。此为特定短句单次测量，不代表所有输入的延迟，也不是严格迁移前后性能对照。
