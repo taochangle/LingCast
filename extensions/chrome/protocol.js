@@ -1,8 +1,9 @@
 export const SERVER_ORIGIN = 'http://127.0.0.1:59480';
 export function roomURL(raw) {
   const url = new URL(raw);
-  if (url.protocol !== 'https:' || !['xiaohongshu.com', 'www.xiaohongshu.com'].includes(url.hostname) || url.port || url.username || url.password || !/^\/livestream\/\d+\/?$/.test(url.pathname)) throw new Error('请先切到小红书直播间页面，再点击开始');
-  return 'https://www.xiaohongshu.com'+url.pathname.replace(/\/$/, '');
+  const room = url.pathname.match(/^\/livestream\/(?:dynpath[A-Za-z0-9_-]+\/)?(\d+)\/?$/);
+  if (url.protocol !== 'https:' || !['xiaohongshu.com', 'www.xiaohongshu.com'].includes(url.hostname) || url.port || url.username || url.password || !room) throw new Error('请先切到小红书直播间页面，再点击开始');
+  return 'https://www.xiaohongshu.com/livestream/'+room[1];
 }
 export function normalizeEvents(events, offset, now = Date.now()) {
   if (!Array.isArray(events) || events.length > 20) throw new Error('消息批次无效');

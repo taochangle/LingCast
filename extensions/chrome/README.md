@@ -1,4 +1,4 @@
-# LingCast Chrome 互动采集 0.1.1
+# LingCast Chrome 互动采集 0.1.2
 
 1. 后台直播台下载 ZIP 并解压，或直接使用仓库的 `extensions/chrome` 文件夹。
 2. Chrome 打开 `chrome://extensions`，开启开发者模式，加载已解压的扩展程序，选择包含 manifest.json 的文件夹。
@@ -16,3 +16,5 @@
 开发：`node --test extensions/chrome/tests/*.test.mjs`；DOM fixture 测试 `cd worker && uv run python -m unittest tests.test_chrome_collector`，测试使用隔离本地页面，不自动打开真实直播间。打包 `python3 extensions/package_chrome.py`，ZIP 与源码同步提交。
 
 Chrome 官方依据：[activeTab](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab)、[扩展跨域请求](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests)。
+
+支持普通数字ID路径及 `/livestream/dynpath…/数字ID` 分享路径，两者按同一房间处理，上报不含分享参数。隐身窗口使用时，先在 `chrome://extensions` → LingCast互动采集 → 详情中手动开启「在无痕模式下启用」，再在隐身直播页点插件开始。更新已解压扩展后需点击扩展卡片的重新加载，再刷新直播页并重新开始。

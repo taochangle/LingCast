@@ -27,3 +27,8 @@ test('manifest limits reading to user action, no cookie/network interception per
  const popup=fs.readFileSync(new URL('../popup.html',import.meta.url),'utf8');
  assert.match(popup, /id="server"[^>]*readonly[^>]*value="http:\/\/112\.19\.174\.43:59480"/);
 });
+
+test('dynamic share paths identify the same room without forwarding share tokens',()=>{
+ assert.equal(roomURL('https://www.xiaohongshu.com/livestream/dynpath4EqZtflx/570517962193993784?xsec_token=private'), 'https://www.xiaohongshu.com/livestream/570517962193993784');
+ for (const path of ['/livestream/dynpath4EqZtflx/123/extra','/livestream/other/123','/livestream/dynpath4EqZtflx/not-a-number']) assert.throws(()=>roomURL('https://www.xiaohongshu.com'+path));
+});

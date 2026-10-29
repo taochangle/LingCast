@@ -115,7 +115,7 @@ func canonicalCollectorRoom(raw string) (string, error) {
 	if (u.Host != "www.xiaohongshu.com" && u.Host != "xiaohongshu.com") || !xhsRoomPath.MatchString(u.Path) {
 		return "", fmt.Errorf("请先打开分享链接跳转后的直播页面")
 	}
-	return "https://www.xiaohongshu.com" + strings.TrimRight(u.Path, "/"), nil
+	return "https://www.xiaohongshu.com/livestream/" + xhsRoomPath.FindStringSubmatch(u.Path)[1], nil
 }
 func (h *LiveHandler) saveCollectorConfig(ctx context.Context, id uint64, config xhsConfig) error {
 	data, _ := json.Marshal(config)

@@ -26,7 +26,7 @@ type xhsConfig struct {
 func xhsKey(id uint64) string { return fmt.Sprintf("live_xhs_config:%d", id) }
 
 var sharedURL = regexp.MustCompile(`https://[^\s<>"“”]+`)
-var xhsRoomPath = regexp.MustCompile(`^/livestream/[0-9]+/?$`)
+var xhsRoomPath = regexp.MustCompile(`^/livestream/(?:dynpath[A-Za-z0-9_-]+/)?([0-9]+)/?$`)
 
 func parseXHSURL(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {

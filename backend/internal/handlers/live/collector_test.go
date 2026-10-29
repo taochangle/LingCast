@@ -26,6 +26,10 @@ func TestCollectorValidation(t *testing.T) {
 			t.Fatal(url)
 		}
 	}
+	room, err = canonicalCollectorRoom("https://www.xiaohongshu.com/livestream/dynpath4EqZtflx/570517962193993784?xsec_token=private")
+	if err != nil || room != "https://www.xiaohongshu.com/livestream/570517962193993784" {
+		t.Fatal(room, err)
+	}
 	event := collectorEvent{ID: "test", Kind: "message", Nickname: "小雨", Text: "你好", Observed: 100000}
 	if !validCollectorEvent(event, 100001) {
 		t.Fatal("valid event rejected")
