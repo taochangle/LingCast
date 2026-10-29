@@ -123,14 +123,14 @@ func TestChatSystemPromptRAGAndMemory(t *testing.T) {
 	facts := []string{"本店商品满99元包邮，七天无理由退货。"}
 
 	zh := chatSystemPrompt(a, "zh", memory, facts)
-	for _, want := range []string{"私有知识库", "本店商品满99元包邮", "最近", "user: 你喜欢什么颜色？", "assistant: 我喜欢紫色。"} {
+	for _, want := range []string{"私有知识库", "本店商品满99元包邮", "最近", "viewer", "你喜欢什么颜色？", "past_reply", "我喜欢紫色。"} {
 		if !strings.Contains(zh, want) {
 			t.Fatalf("zh prompt missing %q:\n%s", want, zh)
 		}
 	}
 
 	en := chatSystemPrompt(a, "en", memory, facts)
-	for _, want := range []string{"private knowledge base", "本店商品满99元包邮", "Recent conversation", "assistant: 我喜欢紫色。"} {
+	for _, want := range []string{"private knowledge base", "本店商品满99元包邮", "Recent conversation", "past_reply", "我喜欢紫色。"} {
 		if !strings.Contains(en, want) {
 			t.Fatalf("en prompt missing %q:\n%s", want, en)
 		}

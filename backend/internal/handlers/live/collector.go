@@ -273,7 +273,7 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 			queueKey = fmt.Sprintf("live_welcome_queue:%d", id)
 		}
 		queued, _ := h.q.ListLen(ctx, queueKey)
-		if unique && enabled && liveCount > 0 && queued < 3 {
+		if unique && enabled && liveCount > 0 && queued < 3 && !blockedLiveInput(e.Nickname+"\n"+e.Text) && !blockedLiveSpeech(e.Nickname) {
 			ready, _ := h.q.Claim(ctx, fmt.Sprintf("collector_cooldown:%d:%s", id, e.Kind), cooldown)
 			if ready {
 				if e.Kind == "enter" {

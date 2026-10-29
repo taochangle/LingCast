@@ -48,6 +48,9 @@ func (h *LiveHandler) streamCompletion(ctx context.Context, system, user string,
 	published := 0
 	publish := func(text string) error {
 		text = strings.TrimSpace(actionTagAnywhere.ReplaceAllString(text, ""))
+		if blockedLiveSpeech(text) {
+			return fmt.Errorf("speech rejected by live guard")
+		}
 		if text == "" {
 			return nil
 		}
@@ -86,7 +89,7 @@ func (h *LiveHandler) streamCompletion(ctx context.Context, system, user string,
 		delta := part.Choices[0].Delta.Content
 		full += delta
 		lower := strings.ToLower(full)
-		if len(full) > 4000 || strings.Contains(lower, "<think") || strings.Contains(lower, "</think>") || strings.Contains(lower, "thinking process:") {
+		if blockedLiveSpeech(full) || len(full) > 4000 || strings.Contains(lower, "<think") || strings.Contains(lower, "</think>") || strings.Contains(lower, "thinking process:") {
 			return "", fmt.Errorf("unspeakable Qwen output")
 		}
 		pending += delta
@@ -126,15 +129,20 @@ func (h *LiveHandler) streamCompletion(ctx context.Context, system, user string,
 }
 
 func (h *LiveHandler) processStreamingReply(ctx context.Context, lang, userText string, avatar models.Avatar, userID uint, scope *xhsReplyScope) (string, int) {
+	if blockedLiveInput(userText) {
+		log.Printf("[LIVE_GUARD] avatar=%d input blocked", avatar.ID)
+		return "", 0
+	}
 	started := time.Now()
 	facts := h.retrieveKnowledge(ctx, avatar.ID, userText, 500*time.Millisecond)
-	system := chatSystemPrompt(avatar, lang, h.recentMessages(avatar.ID, 10), facts)
+	system := chatSystemPrompt(avatar, lang, nil, nil)
+	userContext := liveUserContext(userText, h.recentMessages(avatar.ID, 10), facts)
 	spoken := []string{}
 	key := liveQueueKey(avatar.ID)
 	if scope != nil {
 		key = fmt.Sprintf("live_external_queue:%d", avatar.ID)
 	}
-	_, err := h.streamCompletion(ctx, system, userText, func(sentence string) error {
+	_, err := h.streamCompletion(ctx, system, userContext, func(sentence string) error {
 		if !h.xhsReplyAllowed(ctx, avatar.ID, scope) {
 			return fmt.Errorf("room changed")
 		}
