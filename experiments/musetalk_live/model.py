@@ -21,8 +21,16 @@ class StreamingMuse:
   self.avatars={name:m.Avatar('bench_'+name,str(root/'inputs'/f'{name}.mp4'),0,8,False) for name in ['zhixia','ruotang']}
   for name in self.avatars:
    self.render(name,root/'inputs/speech.wav',lambda frame,index:None)
- def render(self,name,audio,callback):
-  avatar=self.avatars[name];errors=[]
+  # CosyVoice uses 24kHz windows; warm its resampling/short-input path too.
+  warm=root/'live-test'/'warm-24k.wav';warm.parent.mkdir(exist_ok=True)
+  subprocess.run(['ffmpeg','-v','error','-y','-i',str(root/'inputs/speech.wav'),'-t','1.16','-ar','24000',str(warm)],check=True)
+  for name in self.avatars:
+   self.render(name,warm,lambda frame,index:None)
+ def render(self,name,audio,callback,frame_offset=0):
+  avatar=copy.copy(self.avatars[name]);errors=[]
+  # Rotate appearance and matching latents together; preserve pose across audio windows.
+  for key in ['frame_list_cycle','coord_list_cycle','input_latent_list_cycle','mask_list_cycle','mask_coords_list_cycle']:
+   values=getattr(avatar,key);offset=frame_offset%len(values);setattr(avatar,key,values[offset:]+values[:offset])
   def consume(self,q,n,skip):
    try:
     for idx in range(n):

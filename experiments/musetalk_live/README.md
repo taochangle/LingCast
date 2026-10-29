@@ -71,3 +71,9 @@ python3 -m py_compile experiments/musetalk_live/server.py experiments/musetalk_l
 ```
 
 生产 Go Qwen 调用仍保持原有行为，此次流式只接入独立实验页。
+
+## CosyVoice 独立对照入口
+
+实验页现可切换 IndexTTS / CosyVoice3，勾选跳过缓存进行新合成对比。CosyVoice通过另一个 loopback 服务输出PCM块，本页将音频窗口交给MuseTalk，不改生产接口。预热覆盖原始样例和24kHz短窗口。
+
+实现、固定模型版本、私有端口与8条同句实测见 [CosyVoice实验说明](../cosyvoice_live/README.md)。试听报告位于 `http://127.0.0.1:59494/comparison`。本页上述 IndexTTS 历史数据对应之前播放器版本；当前播放器首帧对齐WebAudio起点，勿直接混合历史样本进行性能统计。
