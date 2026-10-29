@@ -712,7 +712,7 @@ func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText strin
 	var reply string
 	var ragFacts []string
 	if scope != nil && requestedProgramme(userText) != "" {
-		reply = programmeSpeech(requestedProgramme(userText))
+		reply = h.programmeSpeech(ctx, avatar.ID, scope.Revision, requestedProgramme(userText))
 	} else {
 		reply, ragFacts = h.llmChat(ctx, lang, userText, avatar)
 	}

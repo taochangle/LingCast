@@ -150,7 +150,7 @@ func (h *LiveHandler) processStreamingReply(ctx context.Context, lang, userText 
 		key = fmt.Sprintf("live_external_queue:%d", avatar.ID)
 	}
 	emit := func(sentence string) error {
-		if blockedLiveSpeech(sentence) {
+		if strings.TrimSpace(sentence) == "" || blockedLiveSpeech(sentence) {
 			return fmt.Errorf("speech blocked")
 		}
 		if !h.xhsReplyAllowed(ctx, avatar.ID, scope) {
@@ -171,7 +171,7 @@ func (h *LiveHandler) processStreamingReply(ctx context.Context, lang, userText 
 	}
 	var err error
 	if programme != "" {
-		err = emit(programmeSpeech(programme))
+		err = emit(h.programmeSpeech(ctx, avatar.ID, scope.Revision, programme))
 	} else {
 		_, err = h.streamCompletion(ctx, system, userContext, emit)
 	}

@@ -190,3 +190,26 @@ func (q *Queue) IncrementTTL(ctx context.Context, key string, n int64, ttl time.
 func (q *Queue) PrependBounded(ctx context.Context, key, value string, limit int, ttl time.Duration) error {
 	return q.client.Eval(ctx, `redis.call('LPUSH',KEYS[1],ARGV[1]); redis.call('LTRIM',KEYS[1],0,tonumber(ARGV[2])-1); redis.call('PEXPIRE',KEYS[1],ARGV[3]); return 1`, []string{key}, value, limit, ttl.Milliseconds()).Err()
 }
+
+// PopRotation consumes a shuffled bag atomically across API replicas. A new bag
+// starts only after exhaustion and never starts with the preceding bag's last item.
+func (q *Queue) PopRotation(ctx context.Context, key string, shuffled []string, ttl time.Duration) (string, error) {
+	if len(shuffled) == 0 {
+		return "", fmt.Errorf("empty rotation")
+	}
+	args := []any{ttl.Milliseconds()}
+	for _, speech := range shuffled {
+		args = append(args, speech)
+	}
+	return q.client.Eval(ctx, `
+ if redis.call('LLEN',KEYS[1])==0 then
+   local first=2
+   if #ARGV>2 and redis.call('GET',KEYS[2])==ARGV[2] then first=3 end
+   redis.call('RPUSH',KEYS[1],ARGV[first])
+   for i=2,#ARGV do if i~=first then redis.call('RPUSH',KEYS[1],ARGV[i]) end end
+ end
+ local value=redis.call('LPOP',KEYS[1])
+ redis.call('PEXPIRE',KEYS[1],ARGV[1])
+ redis.call('SET',KEYS[2],value,'PX',ARGV[1])
+ return value`, []string{key, key + ":last"}, args...).Text()
+}

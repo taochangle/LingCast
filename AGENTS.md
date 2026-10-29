@@ -362,4 +362,4 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 
 - **点赞/礼物感谢（0.1.3）**：Chrome结构化like/gift事件，thanks默认关闭。手动口播 → 礼物live_gift_queue → 点赞live_like_queue → 评论live_external_queue → 欢迎live_welcome_queue → 主持；点赞15秒合并限频/队列1，礼物2秒限频/队列3。感谢固定话术，沿用防注入，所有停止/换房/关播/撤销清理新队列。定向更新API、前端、Worker与插件，禁止为此重启模型；细节见docs/thanks-priority.md。
 
-- **点播小节目**：笑话/夸夸/晚安精确短请求走固定三选一稿、原评论队列，不经Qwen。用户已放弃连续会话，未采集用户ID或新增个人记忆。见docs/viewer-interaction.md；发布仅更新相关API，勿重启模型。
+- **点播小节目**：笑话/夸夸/晚安精确短请求走固定稿（每类30条，Redis跨API按场次轮换去重）、原评论队列，不经Qwen。用户已放弃连续会话，未采集用户ID或新增个人记忆。见docs/viewer-interaction.md；发布仅更新相关API，勿重启模型。

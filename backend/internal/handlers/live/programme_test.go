@@ -1,6 +1,9 @@
 package live
 
-import "testing"
+import (
+	"testing"
+	"unicode/utf8"
+)
 
 func TestProgrammeRequestsAreExplicitAndSafe(t *testing.T) {
 	for text, kind := range map[string]string{"讲个笑话": "joke", "夸夸我！": "praise", "晚安": "goodnight"} {
@@ -14,10 +17,15 @@ func TestProgrammeRequestsAreExplicitAndSafe(t *testing.T) {
 		}
 	}
 	for kind, scripts := range programmeScripts {
-		if len(scripts) < 3 || programmeSpeech(kind) == "" {
+		if len(scripts) != 30 {
 			t.Fatal(kind)
 		}
+		seen := map[string]bool{}
 		for _, speech := range scripts {
+			if seen[speech] || utf8.RuneCountInString(speech) > 80 {
+				t.Fatalf("duplicate/overlong %s: %s", kind, speech)
+			}
+			seen[speech] = true
 			if blockedLiveSpeech(speech) {
 				t.Fatalf("unsafe script %s: %s", kind, speech)
 			}
