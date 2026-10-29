@@ -18,9 +18,10 @@ class AudioWindows:
             length = min(self.core, len(self.pending))
             core = self.pending[:length].copy()
             window = np.concatenate((self.left, self.pending[:length+self.context]))
-            # A sub-frame tail still needs one image; pad only the render context.
+            # Keep right context even at EOF: Whisper feature slicing can drop
+            # a boundary frame without it. Padding is render-only, never spoken.
             frame = self.rate//25
-            required = len(self.left)+((length+frame-1)//frame)*frame
+            required = len(self.left)+((length+frame-1)//frame)*frame+self.context
             if len(window) < required:
                 window = np.pad(window, (0, required-len(window)))
             output.append((core, window, len(self.left)//(self.rate//25)))

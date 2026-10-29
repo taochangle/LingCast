@@ -10,6 +10,19 @@ import numpy as np
 import requests
 from http.server import ThreadingHTTPServer
 from ai.musetalk_client import MuseRenderer
+from ai.audio_windows import AudioWindows
+
+class AudioWindowTests(unittest.TestCase):
+    def test_eof_has_right_context_without_repeating_or_padding_spoken_audio(self):
+        for length in (1, 959, 960, 961, 24000, 24001, 48633):
+            with self.subTest(length=length):
+                pcm = np.arange(length, dtype=np.float32)
+                assembler = AudioWindows(24000)
+                windows = assembler.feed(pcm, final=True)
+                np.testing.assert_array_equal(np.concatenate([w[0] for w in windows]), pcm)
+                for core, window, left in windows:
+                    needed = left + (len(core)+959)//960
+                    self.assertGreaterEqual(len(window), (needed+4)*960)
 
 class StreamTests(unittest.TestCase):
     def setUp(self):
