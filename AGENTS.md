@@ -359,3 +359,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 - **成都流式直播（2026-10-29）**：当前生产直播切换为 Qwen SSE分句 → CosyVoice3（loopback59495）→ MuseTalk逐帧（loopback59496）→ 原FFmpeg/SRS。仅知夏2、若棠3有准备好的profile，见deploy/musetalk-avatars.json；素材不匹配禁止换脸兜底。模型GPU2、常驻预热，参考/环境沿用独立实验；缓存完整音视频事件，重复话术不重复生成。Chrome采集欢迎和回复各2秒限频，保留去重与有界队列。旧模型保留用于回滚；禁止重新启用Playwright。发布与回滚、私有端口、验证详见docs/cosyvoice-musetalk-live.md。
 
 - **互动优先级（2026-10-29）**：手动口播 `live_queue:{id}` → 评论回复 `live_external_queue:{id}` → 欢迎 `live_welcome_queue:{id}` → 自主主持。评论与欢迎独立检查队列容量，欢迎满不挡评论；在取下一任务时生效，不硬打断已开始口播。停止、换房和撤销采集密钥清空两种外部队列。当前Chrome插件真实欢迎与评论回复已验收；上述旧的Playwright/尚未采集描述仅作历史，不重新启用。详见docs/chrome-collector.md和docs/cosyvoice-musetalk-live.md。
+
+- **点赞/礼物感谢（0.1.3）**：Chrome结构化like/gift事件，thanks默认关闭。手动口播 → 礼物live_gift_queue → 点赞live_like_queue → 评论live_external_queue → 欢迎live_welcome_queue → 主持；点赞15秒合并限频/队列1，礼物2秒限频/队列3。感谢固定话术，沿用防注入，所有停止/换房/关播/撤销清理新队列。定向更新API、前端、Worker与插件，禁止为此重启模型；细节见docs/thanks-priority.md。

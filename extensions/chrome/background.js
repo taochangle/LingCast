@@ -56,15 +56,15 @@ async function handle(message,sender) {
    if(!/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
    const tab=await chrome.tabs.get(message.tabId);const room=roomURL(tab.url);
    if(current?.active) await stop(current);
-   const config={server,token:message.token,tabId:tab.id,welcome:!!message.welcome,reply:!!message.reply};
-   const startedAt=Date.now();const result=await request(config,'session',{action:'start',url:room,welcome:config.welcome,reply:config.reply});
+   const config={server,token:message.token,tabId:tab.id,welcome:!!message.welcome,reply:!!message.reply,thanks:!!message.thanks};
+   const startedAt=Date.now();const result=await request(config,'session',{action:'start',url:room,welcome:config.welcome,reply:config.reply,thanks:config.thanks});
    const active={...config,room,revision:result.revision,offset:result.server_ms-Math.round((startedAt+Date.now())/2),active:true,received:0,message:'正在连接直播页面'};
    await save(active);
    try {
      await chrome.scripting.executeScript({target:{tabId:tab.id},files:['dom-reader.js','content.js']});
      await chrome.tabs.sendMessage(tab.id,{type:'LC_BEGIN',revision:active.revision});
    } catch(error) {await stop(active,'无法读取当前页面，请刷新后重新开始');throw error;}
-   await chrome.storage.local.set({prefs:{server,token:config.token,welcome:config.welcome,reply:config.reply}});
+   await chrome.storage.local.set({prefs:{server,token:config.token,welcome:config.welcome,reply:config.reply,thanks:config.thanks}});
    await chrome.alarms.create('collector-heartbeat',{periodInMinutes:1});
    return {ok:true};
  }

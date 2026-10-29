@@ -20,6 +20,7 @@ type Result = {
     enabled: boolean
     welcome: boolean
     reply: boolean
+    thanks?: boolean
     revision: number
     client?: string
   }
@@ -207,7 +208,8 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
           <span className='text-sm text-muted-foreground'>
             已接收 {data?.status?.received || 0} 条 · 自动欢迎
             {data?.config.welcome ? '开' : '关'} · 自动回复
-            {data?.config.reply ? '开' : '关'}
+            {data?.config.reply ? '开' : '关'} · 自动感谢
+            {data?.config.thanks ? '开' : '关'}
           </span>
         </div>
         {data?.config.client === 'extension' && data.config.url && (
@@ -235,13 +237,23 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
                     {new Date(event.observed_ms).toLocaleTimeString()} ·{' '}
                   </span>
                   <strong>{event.nickname}</strong>
-                  {event.kind === 'enter' ? ' 来了' : `：${event.text}`}
+                  {event.kind === 'enter'
+                    ? ' 来了'
+                    : event.kind === 'like'
+                      ? ' 为主播点赞了'
+                      : event.kind === 'gift'
+                        ? ` 送出 ${event.text}`
+                        : `：${event.text}`}
                   <span className='ml-2 text-xs text-muted-foreground'>
-                    {event.action === 'welcome'
-                      ? '已排队欢迎'
-                      : event.action === 'reply'
-                        ? '回复生成中'
-                        : '仅展示'}
+                    {event.action === 'gift'
+                      ? '已排队礼物感谢'
+                      : event.action === 'like'
+                        ? '已排队点赞感谢'
+                        : event.action === 'welcome'
+                          ? '已排队欢迎'
+                          : event.action === 'reply'
+                            ? '回复生成中'
+                            : '仅展示'}
                   </span>
                 </li>
               ))}

@@ -32,3 +32,10 @@ test('dynamic share paths identify the same room without forwarding share tokens
  assert.equal(roomURL('https://www.xiaohongshu.com/livestream/dynpath4EqZtflx/570517962193993784?xsec_token=private'), 'https://www.xiaohongshu.com/livestream/570517962193993784');
  for (const path of ['/livestream/dynpath4EqZtflx/123/extra','/livestream/other/123','/livestream/dynpath4EqZtflx/not-a-number']) assert.throws(()=>roomURL('https://www.xiaohongshu.com'+path));
 });
+
+test('like and gift notices are normalized, malformed gifts rejected',()=>{
+ const base={id:'like-1',nickname:'Lynn',text:'',observed_ms:10000};
+ assert.equal(normalizeEvents([{...base,kind:'like'}],0,11000)[0].kind,'like');
+ assert.equal(normalizeEvents([{...base,kind:'gift',text:'人气票 x1'}],0,11000)[0].text,'人气票 x1');
+ assert.equal(normalizeEvents([{...base,kind:'gift',text:'人气票 x0'}],0,11000).length,0);
+});

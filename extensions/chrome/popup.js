@@ -5,7 +5,7 @@ let initialized=false;
 async function refresh() {
  try {
   const {prefs,status}=await send({type:'LC_STATUS'});
-  if(!initialized) {$('server').value=SERVER_ORIGIN;$('token').value=prefs.token || '';for(const id of ['welcome','reply']) $(id).checked=!!prefs[id];initialized=true;}
+  if(!initialized) {$('server').value=SERVER_ORIGIN;$('token').value=prefs.token || '';for(const id of ['welcome','reply','thanks']) $(id).checked=!!prefs[id];initialized=true;}
   $('status').textContent=status ? `${status.message || (status.active?'正在采集':'已停止')} · 已接收 ${status.received || 0} 条${status.room?'\n'+status.room:''}` : '尚未开始';
   $('stop').disabled=!status?.active;
  } catch(error) {$('error').textContent=error.message;}
@@ -19,7 +19,7 @@ $('form').addEventListener('submit',async event=>{
   const granted=await chrome.permissions.request({origins:[`${origin.protocol}//${origin.hostname}/*`]});
   if(!granted) throw new Error('未授权连接这个 LingCast 服务器');
   const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
-  await send({type:'LC_START',server,token:$('token').value.trim(),tabId:tab.id,welcome:$('welcome').checked,reply:$('reply').checked});
+  await send({type:'LC_START',server,token:$('token').value.trim(),tabId:tab.id,welcome:$('welcome').checked,reply:$('reply').checked,thanks:$('thanks').checked});
   await refresh();
  } catch(error) {$('error').textContent=error.message;} finally {$('start').disabled=false;}
 });

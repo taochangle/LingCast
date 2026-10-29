@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +53,8 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 			}
 			_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
 			_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
+			_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_gift_queue:%d", id))
+			_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_like_queue:%d", id))
 		}
 		c.JSON(200, gin.H{"revoked": true})
 		return
@@ -80,6 +83,8 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 		}
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
+		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_gift_queue:%d", id))
+		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_like_queue:%d", id))
 	}
 	c.JSON(200, gin.H{"token": token, "avatar_id": id, "avatar_name": avatar.Name, "expires_ms": time.Now().Add(12 * time.Hour).UnixMilli()})
 }
@@ -132,6 +137,7 @@ func (h *LiveHandler) CollectorSession(c *gin.Context) {
 		Revision int64  `json:"revision"`
 		Welcome  bool   `json:"welcome"`
 		Reply    bool   `json:"reply"`
+		Thanks   bool   `json:"thanks"`
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
 	if c.ShouldBindJSON(&req) != nil {
@@ -154,7 +160,7 @@ func (h *LiveHandler) CollectorSession(c *gin.Context) {
 		if revision <= config.Revision {
 			revision = config.Revision + 1
 		}
-		config = xhsConfig{URL: room, Enabled: true, Welcome: req.Welcome, Reply: req.Reply, Revision: revision, Client: "extension"}
+		config = xhsConfig{URL: room, Enabled: true, Welcome: req.Welcome, Reply: req.Reply, Thanks: req.Thanks, Revision: revision, Client: "extension"}
 	case "stop":
 		if config.Client != "extension" || config.Revision != req.Revision {
 			c.JSON(409, gin.H{"error": "采集会话已更换"})
@@ -171,6 +177,8 @@ func (h *LiveHandler) CollectorSession(c *gin.Context) {
 	}
 	_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
 	_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
+	_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_gift_queue:%d", id))
+	_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_like_queue:%d", id))
 	state := "listening"
 	if !config.Enabled {
 		state = "stopped"
@@ -187,10 +195,12 @@ type collectorEvent struct {
 	Observed int64  `json:"observed_ms"`
 }
 
+var giftNoticeText = regexp.MustCompile(`^[^\r\n]{1,60} x[1-9][0-9]{0,3}$`)
+
 func validCollectorEvent(e collectorEvent, now int64) bool {
-	return len(e.ID) > 0 && len(e.ID) <= 100 && (e.Kind == "enter" || e.Kind == "message") &&
+	return len(e.ID) > 0 && len(e.ID) <= 100 && (e.Kind == "enter" || e.Kind == "message" || e.Kind == "like" || e.Kind == "gift") &&
 		utf8.RuneCountInString(e.Nickname) > 0 && utf8.RuneCountInString(e.Nickname) <= 40 &&
-		utf8.RuneCountInString(e.Text) <= 300 && (e.Kind != "message" || strings.TrimSpace(e.Text) != "") &&
+		utf8.RuneCountInString(e.Text) <= 300 && (e.Kind != "gift" || giftNoticeText.MatchString(e.Text)) && (e.Kind != "like" || e.Text == "") && (e.Kind != "message" || strings.TrimSpace(e.Text) != "") &&
 		now-e.Observed >= -5000 && now-e.Observed <= 30000
 }
 func (h *LiveHandler) collectorStatus(ctx context.Context, id uint64, revision int64, state string, count int64) {
@@ -266,17 +276,33 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 		if h.streamingSpeech {
 			cooldown = 2 * time.Second
 		}
+		if e.Kind == "like" {
+			cooldown = 15 * time.Second
+			enabled = config.Thanks
+		}
+		if e.Kind == "gift" {
+			cooldown = 2 * time.Second
+			enabled = config.Thanks
+		}
 		signature := tokenDigest(e.Kind + "\x00" + e.Nickname + "\x00" + e.Text)
 		unique, _ := h.q.Claim(ctx, fmt.Sprintf("collector_repeat:%d:%s", id, signature), map[bool]time.Duration{true: 5 * time.Minute, false: 15 * time.Second}[e.Kind == "enter"])
 		queueKey := fmt.Sprintf("live_external_queue:%d", id)
 		if e.Kind == "enter" {
 			queueKey = fmt.Sprintf("live_welcome_queue:%d", id)
 		}
+		limit := int64(3)
+		if e.Kind == "like" {
+			queueKey = fmt.Sprintf("live_like_queue:%d", id)
+			limit = 1
+		}
+		if e.Kind == "gift" {
+			queueKey = fmt.Sprintf("live_gift_queue:%d", id)
+		}
 		queued, _ := h.q.ListLen(ctx, queueKey)
-		if unique && enabled && liveCount > 0 && queued < 3 && !blockedLiveInput(e.Nickname+"\n"+e.Text) && !blockedLiveSpeech(e.Nickname) {
+		if unique && enabled && liveCount > 0 && queued < limit && !blockedLiveInput(e.Nickname+"\n"+e.Text) && !blockedLiveSpeech(e.Nickname) {
 			ready, _ := h.q.Claim(ctx, fmt.Sprintf("collector_cooldown:%d:%s", id, e.Kind), cooldown)
 			if ready {
-				if e.Kind == "enter" {
+				if e.Kind != "message" {
 					name := strings.Map(func(r rune) rune {
 						if unicode.IsControl(r) || strings.ContainsRune("<>[]{}", r) {
 							return -1
@@ -287,10 +313,14 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 					if len(runes) > 24 {
 						name = string(runes[:24])
 					}
-					job := gin.H{"text": "欢迎" + name + "来到直播间。", "narration": true, "job_id": fmt.Sprintf("ext-%d", time.Now().UnixNano()), "ts": now, "submitted_ms": now, "xhs_revision": req.Revision}
+					speech := collectorThanksSpeech(e.Kind, name, e.Text)
+					job := gin.H{"text": speech, "narration": true, "job_id": fmt.Sprintf("ext-%d", time.Now().UnixNano()), "ts": now, "submitted_ms": now, "xhs_revision": req.Revision}
 					data, _ := json.Marshal(job)
-					if h.q.PushBounded(ctx, queueKey, string(data), 3) == nil {
-						action = "welcome"
+					if h.q.PushBounded(ctx, queueKey, string(data), limit) == nil {
+						action = e.Kind
+						if e.Kind == "enter" {
+							action = "welcome"
+						}
 					}
 				} else {
 					action = "reply"
@@ -310,4 +340,20 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 	count, _ := h.q.IncrementTTL(ctx, fmt.Sprintf("collector_received:%d:%d", id, req.Revision), int64(accepted), 24*time.Hour)
 	h.collectorStatus(ctx, id, req.Revision, "listening", count)
 	c.JSON(200, gin.H{"accepted": accepted, "received": count, "server_ms": time.Now().UnixMilli()})
+}
+
+// Likes coalesce into a generic thank-you; gift names are not arbitrary speech.
+func collectorThanksSpeech(kind, name, text string) string {
+	switch kind {
+	case "like":
+		return "谢谢大家的点赞支持，看到你们啦。"
+	case "gift":
+		gift := "礼物"
+		if strings.Contains(text, "人气票") {
+			gift = "人气票"
+		}
+		return "谢谢" + name + "送来的" + gift + "，感谢支持。"
+	default:
+		return "欢迎" + name + "来到直播间。"
+	}
 }

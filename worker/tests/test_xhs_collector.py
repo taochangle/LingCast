@@ -89,3 +89,29 @@ class ExternalQueuePriorityTests(unittest.TestCase):
         self.assertEqual(json.loads(pop_live_job(client, 'live_queue:1', 1))['text'], 'reply')
         self.assertIsNone(pop_live_job(client, 'live_queue:1', 1))
         self.assertEqual(json.loads(pop_live_job(client, 'live_queue:1', 1))['text'], 'welcome')
+
+    def test_full_priority_order_manual_gift_like_reply_welcome(self):
+        import json
+        from unittest.mock import Mock
+        from streaming.incoming import pop_live_job
+        lists = {'live_queue:1': ['manual']}
+        for kind in ('gift','like','external','welcome'):
+            lists[f'live_{kind}_queue:1'] = [json.dumps({'text':kind,'xhs_revision':2})]
+        client=Mock()
+        client.lpop.side_effect=lambda key: lists[key].pop(0) if lists.get(key) else None
+        client.get.return_value=json.dumps({'enabled':True,'revision':2})
+        self.assertEqual(pop_live_job(client,'live_queue:1',1),'manual')
+        self.assertEqual([json.loads(pop_live_job(client,'live_queue:1',1))['text'] for _ in range(4)],['gift','like','external','welcome'])
+        self.assertIsNone(pop_live_job(client,'live_queue:1',1))
+
+    def test_stale_thanks_are_not_spoken(self):
+        import json
+        from unittest.mock import Mock
+        from streaming.incoming import pop_live_job
+        client=Mock()
+        lists={'live_gift_queue:1':[json.dumps({'text':'old gift','xhs_revision':1})],
+               'live_like_queue:1':[json.dumps({'text':'old like','xhs_revision':1})]}
+        client.lpop.side_effect=lambda key: lists[key].pop(0) if lists.get(key) else None
+        client.get.return_value=json.dumps({'enabled':True,'revision':2})
+        self.assertIsNone(pop_live_job(client,'live_queue:1',1))
+        self.assertIsNone(pop_live_job(client,'live_queue:1',1))

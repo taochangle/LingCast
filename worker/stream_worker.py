@@ -957,6 +957,8 @@ class LiveAvatarSession:
                     and playback.get('playback') != 'playing')
             manual_busy = bool(r.llen(self.queue_key) or r.llen(f'live_external_queue:{self.avatar_id}') or
                               r.llen(f'live_welcome_queue:{self.avatar_id}') or
+                              r.llen(f'live_gift_queue:{self.avatar_id}') or
+                              r.llen(f'live_like_queue:{self.avatar_id}') or
                               (self._tts_thread and self._tts_thread.is_alive()) or
                               not self._pending.empty() or not self._tts_results.empty())
             with self._idle_lock:

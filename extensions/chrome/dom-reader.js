@@ -5,11 +5,23 @@
   const selector = '.msg-wrapper, .enter-msgs .msg-content';
   const parse = node => {
     if (node.matches('.enter-msgs .msg-content') && node.closest('.msg-wrapper')) return null;
-    if (node.matches('.role-host, .role-system, .role-notice, .role-gift') || node.closest('.role-host')) return null;
+    if (node.matches('.role-host, .role-system') || node.closest('.role-host')) return null;
     const nickname = node.querySelector('.nickname')?.textContent?.trim();
     if (!nickname) return null;
     if (node.closest('.enter-msgs') && /来了\s*$/.test(node.textContent)) return {kind:'enter',nickname,text:''};
-    if (!node.matches('.msg-wrapper.role-user')) return null;
+    const copyText = element => {
+      const copy = element.cloneNode(true);
+      copy.querySelectorAll('img[alt]').forEach(image => image.replaceWith(image.alt));
+      return copy.textContent.trim();
+    };
+    // Only structured notification rows; ordinary user chat must stay chat.
+    const body = copyText(node).replace(new RegExp('^'+nickname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '').trim();
+    if (!node.querySelector('.content') || node.matches('.role-gift, .role-like')) {
+      if (/^(?:为主播)?点赞了[！!。]?$/u.test(body.replace(/\s+/g,''))) return {kind:'like',nickname,text:''};
+      const gift = body.match(/^送出\s*(.{1,40}?)\s*[x×]\s*([1-9]\d{0,3})$/u);
+      if (gift) return {kind:'gift',nickname,text:`${gift[1].trim()} x${gift[2]}`};
+    }
+    if (node.matches('.role-notice') || !node.matches('.msg-wrapper.role-user')) return null;
     const content = node.querySelector('.content');
     if (!content) return null;
     const copy = content.cloneNode(true);

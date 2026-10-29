@@ -20,6 +20,7 @@ type xhsConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Welcome  bool   `json:"welcome"`
 	Reply    bool   `json:"reply"`
+	Thanks   bool   `json:"thanks"`
 	Revision int64  `json:"revision"`
 }
 
@@ -106,6 +107,8 @@ func (h *LiveHandler) XHS(c *gin.Context) {
 		// Drop replies from the old room; manual narration lives in another queue.
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
+		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_gift_queue:%d", id))
+		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_like_queue:%d", id))
 	}
 	raw, _ := h.q.ReadValue(c.Request.Context(), fmt.Sprintf("live_xhs_status:%d", id))
 	var status map[string]any
@@ -153,6 +156,8 @@ func (h *LiveHandler) stopXHS(ctx context.Context, id uint64) error {
 		fmt.Sprintf("live_xhs_status:%d", id),
 		fmt.Sprintf("live_external_queue:%d", id),
 		fmt.Sprintf("live_welcome_queue:%d", id),
+		fmt.Sprintf("live_gift_queue:%d", id),
+		fmt.Sprintf("live_like_queue:%d", id),
 		fmt.Sprintf("collector_received:%d:%d", id, previous),
 	} {
 		if err := h.q.DeleteKey(ctx, key); err != nil {
