@@ -109,6 +109,7 @@ func TestCollectorIntegration(t *testing.T) {
 		t.Fatal("old room accepted", code)
 	}
 	// A real live session may welcome, but only once in the cooldown window.
+	h.streamingSpeech = true
 	live := models.LiveSession{AvatarID: avatar.ID, StreamID: "collector-test", Status: "idle"}
 	db.Create(&live)
 	defer db.Delete(&live)
@@ -124,6 +125,17 @@ func TestCollectorIntegration(t *testing.T) {
 	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_external_queue:%d", avatar.ID))
 	if n != 1 {
 		t.Fatal("welcome cooldown", n)
+	}
+	// Streamed speech accepts a new arrival after two seconds, rather than a minute.
+	time.Sleep(2100 * time.Millisecond)
+	data["events"] = []collectorEvent{{ID: "after-cooldown", Kind: "enter", Nickname: "新访客", Observed: time.Now().UnixMilli()}}
+	q.DeleteKey(t.Context(), fmt.Sprintf("collector_batch:%d", avatar.ID))
+	if code, result := request("POST", "/events", token, data); code != 200 {
+		t.Fatal(code, result)
+	}
+	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_external_queue:%d", avatar.ID))
+	if n != 2 {
+		t.Fatal("streamed welcome must resume after two seconds", n)
 	}
 	request("DELETE", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
 	if code, _ := request("POST", "/session", token, map[string]any{"action": "start", "url": data["url"]}); code != 401 {
