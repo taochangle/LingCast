@@ -458,10 +458,19 @@ func (h *LiveHandler) Stop(c *gin.Context) {
 	var session models.LiveSession
 	if err := h.db.Where("avatar_id = ?", avatarID).First(&session).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": i18n.Tc(c, "err.live.session_not_started")})
+			if err := h.stopXHS(c.Request.Context(), avatarID); err != nil {
+				c.JSON(503, gin.H{"error": "清理直播互动失败，请重试"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"stopped": avatarID})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
+		return
+	}
+
+	if err := h.stopXHS(c.Request.Context(), avatarID); err != nil {
+		c.JSON(503, gin.H{"error": "清理直播互动失败，请重试"})
 		return
 	}
 

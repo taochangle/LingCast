@@ -56,12 +56,13 @@ func TestCollectorIntegration(t *testing.T) {
 	}
 	defer db.Delete(&avatar)
 	q := queue.New(redis, "", 0, "")
-	h := LiveHandler{db: db, q: q}
+	h := LiveHandler{db: db, q: q, liveControlQueueKey: "collector-test-control"}
 	router := gin.New()
 	router.POST("/pair/:avatarID", h.CollectorPair)
 	router.DELETE("/pair/:avatarID", h.CollectorPair)
 	router.POST("/session", h.CollectorSession)
 	router.POST("/events", h.CollectorEvents)
+	router.POST("/stop/:avatarID", h.Stop)
 	request := func(method, path, token string, body any) (int, map[string]any) {
 		payload, _ := json.Marshal(body)
 		req := httptest.NewRequest(method, path, bytes.NewReader(payload))
@@ -136,6 +137,33 @@ func TestCollectorIntegration(t *testing.T) {
 	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_welcome_queue:%d", avatar.ID))
 	if n != 2 {
 		t.Fatal("streamed welcome must resume after two seconds", n)
+	}
+
+	// Closing a broadcast clears its UI/events and both interaction queues, but not the pairing.
+	replyKey := fmt.Sprintf("live_external_queue:%d", avatar.ID)
+	q.PushBounded(t.Context(), replyKey, "queued reply", 3)
+	if code, result := request("POST", fmt.Sprintf("/stop/%d", avatar.ID), "", nil); code != 200 {
+		t.Fatal(code, result)
+	}
+	config, err := h.readXHS(t.Context(), uint64(avatar.ID))
+	if err != nil || config.Enabled || config.Revision <= int64(data["revision"].(float64)) {
+		t.Fatal("collector not invalidated", config, err)
+	}
+	for _, key := range []string{replyKey, fmt.Sprintf("live_welcome_queue:%d", avatar.ID), fmt.Sprintf("live_xhs_events:%d", avatar.ID)} {
+		n, _ := q.ListLen(t.Context(), key)
+		if n != 0 {
+			t.Fatal("stop kept broadcast activity", key, n)
+		}
+	}
+	if saved, _ := q.ReadValue(t.Context(), collectorTokenKey(uint64(avatar.ID))); saved != digest {
+		t.Fatal("stop changed pairing")
+	}
+	q.DeleteKey(t.Context(), fmt.Sprintf("collector_batch:%d", avatar.ID))
+	if code, _ := request("POST", "/events", token, data); code != 409 {
+		t.Fatal("stopped collector repopulated events", code)
+	}
+	if code, _ := request("POST", fmt.Sprintf("/stop/%d", avatar.ID), "", nil); code != 200 {
+		t.Fatal("stop must clean already closed broadcast", code)
 	}
 	request("DELETE", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
 	if code, _ := request("POST", "/session", token, map[string]any{"action": "start", "url": data["url"]}); code != 401 {

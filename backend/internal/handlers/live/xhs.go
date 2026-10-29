@@ -132,3 +132,32 @@ func (h *LiveHandler) xhsReplyAllowed(ctx context.Context, avatarID uint, scope 
 	config, err := h.readXHS(ctx, uint64(avatarID))
 	return err == nil && config.Enabled && config.Reply && config.Revision == scope.Revision
 }
+
+// stopXHS clears per-broadcast activity while preserving pairing and room settings.
+func (h *LiveHandler) stopXHS(ctx context.Context, id uint64) error {
+	config, err := h.readXHS(ctx, id)
+	if err != nil {
+		return err
+	}
+	previous := config.Revision
+	config.Enabled = false
+	config.Revision = time.Now().UnixMilli()
+	if config.Revision <= previous {
+		config.Revision = previous + 1
+	}
+	if err := h.saveCollectorConfig(ctx, id, config); err != nil {
+		return err
+	}
+	for _, key := range []string{
+		fmt.Sprintf("live_xhs_events:%d", id),
+		fmt.Sprintf("live_xhs_status:%d", id),
+		fmt.Sprintf("live_external_queue:%d", id),
+		fmt.Sprintf("live_welcome_queue:%d", id),
+		fmt.Sprintf("collector_received:%d:%d", id, previous),
+	} {
+		if err := h.q.DeleteKey(ctx, key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
