@@ -18,6 +18,9 @@ FROM nginx:alpine AS runner
 ENV TZ=Asia/Shanghai
 RUN apk info -e tzdata >/dev/null || apk add --no-cache tzdata
 
+# Our complete nginx.conf does not need the stock IPv6 patch, whose apk
+# manifest lookup can block startup when package mirrors are unavailable.
+RUN rm /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
