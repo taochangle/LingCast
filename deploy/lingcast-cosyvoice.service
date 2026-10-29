@@ -1,0 +1,11 @@
+[Unit]
+Description=LingCast CosyVoice3 resident audio stream
+After=network-online.target
+[Service]
+WorkingDirectory=/data1/taoxin/lingcast-cosyvoice-bench
+ExecStart=/data1/taoxin/.local/bin/uv run --frozen --no-sync python -u /data1/taoxin/LingCast/worker/cosyvoice_service.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+[Install]
+WantedBy=default.target

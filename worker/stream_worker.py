@@ -55,6 +55,8 @@ from storage import S3Storage
 import numpy as np
 from ai.resident_client import ResidentRenderer, CompletedClip
 from ai.host_director import HostDirector
+from ai.musetalk_client import MuseRenderer, StreamingSpeech
+import base64
 from streaming.incoming import pop_live_job
 from streaming.ffmpeg_pipe import AUDIO_SAMPLE_RATE, FFmpegPipeClosedError
 from worker import (
@@ -254,7 +256,8 @@ class LiveAvatarSession:
         # Ready_Frames_Queue: ("seg", _TalkingSegment) then ("frame", ndarray).
         # The writer thread consumes it at exactly fps; the inference thread
         # produces it. When empty, the writer falls back to base frames.
-        self._talk_queue: queue_mod.Queue = queue_mod.Queue(maxsize=4096)
+        self._talk_queue: queue_mod.Queue = queue_mod.Queue(maxsize=75 if os.environ.get("LIPSYNC_ENGINE") == "musetalk" else 4096)
+        self._muse_play_lock = threading.Lock()
         # Finished TTS results waiting for the frame producer (text, wav|None).
         self._pending: queue_mod.Queue = queue_mod.Queue(maxsize=4)
         self._tts_results: queue_mod.Queue = queue_mod.Queue(maxsize=2)
@@ -287,7 +290,8 @@ class LiveAvatarSession:
 
         if not self.base_video_path.exists():
             raise RuntimeError(f"base video not found: {self.base_video_path}")
-        self.resident = ResidentRenderer(self.storage) if os.environ.get("LIPSYNC_ENGINE") == "latentsync" else None
+        self.resident = (MuseRenderer(self.avatar_id) if os.environ.get("LIPSYNC_ENGINE") == "musetalk"
+                         else ResidentRenderer(self.storage) if os.environ.get("LIPSYNC_ENGINE") == "latentsync" else None)
         self.lipsync = None if self.resident else Wav2LipOnnxLipSync()
         # Optional face restoration fixes Wav2Lip lip deformation (口型变形).
         # Live follows the same FACE_ENHANCER env as offline
@@ -436,6 +440,9 @@ class LiveAvatarSession:
                 self._state("render", "generating")
                 with self._idle_lock:
                     key = base_video_key or self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)]
+                if isinstance(self.resident, MuseRenderer):
+                    self._stream_talking(text, key, narration or {'submitted_ms': queued_ts})
+                    return
                 if narration:
                     for clip in self.resident.render_narration(text, key, self.work_dir,
                             narration['job_id'], narration.get('submitted_ms', 0)):
@@ -619,7 +626,10 @@ class LiveAvatarSession:
                     cur_seg = payload
                     self._subtitle_text = payload.text
                     seg_start_ts = time.perf_counter()
-                    kind = None  # this tick still writes an idle frame
+                    try:
+                        kind, payload = self._talk_queue.get_nowait()
+                    except queue_mod.Empty:
+                        kind, payload = None, None
 
                 if kind == "seg_end":
                     # Producer aborted (e.g. TTS/Wav2Lip failure): abandon the
@@ -1019,6 +1029,12 @@ class LiveAvatarSession:
         if wav is None:
             logger.warning("avatar %s chunk skipped (TTS failed)", self.avatar_id)
             return
+        if isinstance(wav, StreamingSpeech):
+            try:
+                self._stream_talking(wav.text, wav.base_key, wav.metrics.get('narration', {}))
+            finally:
+                wav.path.unlink(missing_ok=True)
+            return
         if isinstance(wav, CompletedClip):
             self._produce_completed_clip(text, wav)
             return
@@ -1107,6 +1123,45 @@ class LiveAvatarSession:
                     wav.unlink(missing_ok=True)
                 except OSError:
                     logger.warning("failed to remove temp tts file %s", wav)
+
+    def _stream_talking(self, text, base_key, metadata):
+        """Publish complete audio windows as frames arrive; no MP4 barrier."""
+        import cv2
+        started = time.perf_counter()
+        def put(kind, value):
+            while self._running:
+                try:
+                    self._talk_queue.put((kind, value), timeout=1)
+                    return
+                except queue_mod.Full:
+                    pass
+            raise RuntimeError('Live session stopped')
+        with self._muse_play_lock:
+            try:
+                pending = None
+                self._talk_is_action = True
+                for event in self.resident.events(text, base_key):
+                    if not self._running:
+                        break
+                    if event['type'] == 'audio':
+                        index = event['index']+1
+                        telemetry = dict(job_id=metadata.get('job_id') or 'stream',
+                                         submitted_ms=metadata.get('submitted_ms', 0), index=index, count=index)
+                        pending = _TalkingSegment(text, event['audio'], event['frames'], telemetry)
+                    elif event['type'] == 'frame':
+                        frame = cv2.imdecode(np.frombuffer(base64.b64decode(event['jpeg']), np.uint8), cv2.IMREAD_COLOR)
+                        if frame is None or frame.shape != self.base_frames[0].shape:
+                            raise RuntimeError('MuseTalk frame does not match idle dimensions')
+                        if pending is not None:
+                            put('seg', pending)
+                            pending = None
+                            self._state('render', 'ready', engine='cosyvoice-musetalk', cache_hit=str(event['cache_hit']).lower())
+                        put('frame', frame)
+                logger.info('[STREAM] avatar=%s text_chars=%s total=%.3fs', self.avatar_id, len(text), time.perf_counter()-started)
+            except Exception:
+                self._state('render', 'failed')
+                logger.exception('CosyVoice/MuseTalk stream failed')
+                put('seg_end', None)
 
     def _state(self, field, value, **extra):
         try:
@@ -1551,7 +1606,7 @@ def main() -> None:
         _ensure_nltk_resources()
     cfg = load_config()
     work_root = cfg["work_root"]
-    fps = float(os.environ.get("LIVEPORTRAIT_OUTPUT_FPS", "24"))
+    fps = 25.0 if os.environ.get("LIPSYNC_ENGINE") == "musetalk" else float(os.environ.get("LIVEPORTRAIT_OUTPUT_FPS", "24"))
     control_key = os.environ.get(
         "LIVE_CONTROL_QUEUE_KEY", "talking_avatar:live_control"
     )

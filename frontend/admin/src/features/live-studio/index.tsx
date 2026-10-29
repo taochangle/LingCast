@@ -525,7 +525,7 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
                   <p className='text-xs text-muted-foreground'>
                     {i18n.language === 'en'
                       ? (started ? 'Up to 220 characters. One narration, split at natural pauses. The first ready segment plays while later segments generate; idle video fills any gaps.' : 'Start the live session before submitting speech.')
-                      : (started ? '最多 220 字，按原文整段配音，在自然停顿处切段。首段就绪即播，后续后台生成；未就绪时播放待机画面。' : '请先打开直播，再提交口播内容。')}
+                      : (started ? '最多 220 字，按原文口播，声音与口型边生成边播；首段就绪即播，未就绪时播放待机画面。' : '请先打开直播，再提交口播内容。')}
                   </p>
                   <p className='text-xs text-muted-foreground'>{Array.from(messageText.trim()).length}/220</p>
                 </form>

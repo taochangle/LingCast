@@ -139,7 +139,7 @@ class HostDirector:
             index = self.library_order.popleft()
             text, source = self.library[index]
             clip = copy.deepcopy(source)
-            clip.path = source.path.with_name('host-play-'+uuid.uuid4().hex+'.mp4')
+            clip.path = source.path.with_name('host-play-'+uuid.uuid4().hex+source.path.suffix)
             shutil.copyfile(source.path, clip.path)
             self.active = True
             self.report(r, 'speaking')

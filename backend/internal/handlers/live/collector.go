@@ -260,6 +260,9 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 			cooldown = 60 * time.Second
 			enabled = config.Welcome
 		}
+		if h.streamingSpeech {
+			cooldown = 2 * time.Second
+		}
 		signature := tokenDigest(e.Kind + "\x00" + e.Nickname + "\x00" + e.Text)
 		unique, _ := h.q.Claim(ctx, fmt.Sprintf("collector_repeat:%d:%s", id, signature), map[bool]time.Duration{true: 5 * time.Minute, false: 15 * time.Second}[e.Kind == "enter"])
 		queued, _ := h.q.ListLen(ctx, fmt.Sprintf("live_external_queue:%d", id))

@@ -79,7 +79,7 @@ export function ProjectReader({ avatarId, started, onMaterial }: { avatarId: num
           <p className='text-sm text-muted-foreground'>{result.repository} · 版本 {result.commit.slice(0, 8)} · 已读取 {result.sources.length} 个文件（部分文件可能节选）</p>
           <Label htmlFor='project-script'>讲解稿（可以修改）</Label>
           <Textarea id='project-script' rows={6} value={script} onChange={(event) => { setScript(event.target.value); setSubmitted(false) }} />
-          <p className='text-xs text-muted-foreground'>{Array.from(script.trim()).length}/220 字。整段配音一次，按自然停顿切段；首段就绪即播，后续后台生成，未就绪时回到待机。</p>
+          <p className='text-xs text-muted-foreground'>{Array.from(script.trim()).length}/220 字。声音与口型边生成边播；首段就绪即播，未就绪时回到待机。</p>
           <div><Button onClick={() => void speak()} disabled={!started || sending || submitted || !script.trim() || Array.from(script.trim()).length > 220}>{sending ? '提交中…' : submitted ? '已提交讲解' : '按原文讲解'}</Button></div>
           {!started && <p className='text-sm text-muted-foreground'>请先点击右上角「打开直播」，再提交讲解。</p>}
           <div><Button variant='outline' onClick={() => { onMaterial?.(`介绍 ${result.repository}`, `仓库：${result.repository}\n提交版本：${result.commit}\n速读结论（仅部分文件）：${script}`); toast.success('已导入下方自主主持参考资料') }}>用作自主主持资料</Button></div>

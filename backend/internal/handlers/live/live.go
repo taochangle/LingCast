@@ -124,6 +124,7 @@ type LiveHandler struct {
 	openAIModel         string
 	openAIAPI           string
 	residentClips       bool
+	streamingSpeech     bool
 	embedServerURL      string
 	ttsServiceURL       string
 	taskQueueKey        string
@@ -228,7 +229,7 @@ func NewLiveHandler(db *gorm.DB, q *queue.Queue, s3 *storage.Client, liveControl
 	}
 	return &LiveHandler{
 		db: db, q: q, s3: s3, liveControlQueueKey: liveControlQueueKey,
-		openAIAPIKey: openAIAPIKey, openAIBaseURL: openAIBaseURL, openAIModel: openAIModel, openAIAPI: mode, residentClips: len(apiMode) > 1 && apiMode[1] == "latentsync",
+		openAIAPIKey: openAIAPIKey, openAIBaseURL: openAIBaseURL, openAIModel: openAIModel, openAIAPI: mode, residentClips: len(apiMode) > 1 && (apiMode[1] == "latentsync" || apiMode[1] == "musetalk"), streamingSpeech: len(apiMode) > 1 && apiMode[1] == "musetalk",
 		embedServerURL: embedServerURL, ttsServiceURL: ttsServiceURL,
 		taskQueueKey: taskQueueKey,
 	}
@@ -690,6 +691,10 @@ func (h *LiveHandler) Message(c *gin.Context) {
 // failure is logged and degrades gracefully (the viewer still sees their own
 // message via history polling; the bot simply stays silent on this one).
 func (h *LiveHandler) processChatReply(ctx context.Context, lang, userText string, avatar models.Avatar, userID uint, scope *xhsReplyScope) {
+	if h.streamingSpeech {
+		h.processStreamingReply(ctx, lang, userText, avatar, userID, scope)
+		return
+	}
 	t0 := time.Now()
 	reply, ragFacts := h.llmChat(ctx, lang, userText, avatar)
 	chunks := splitSentences(reply)
@@ -818,6 +823,12 @@ func (h *LiveHandler) Chat(c *gin.Context) {
 		sender = "游客"
 	}
 	_ = h.db.Create(&models.LiveMessage{AvatarID: avatar.ID, SenderID: req.UserID, SenderType: "web", Username: sender, Role: "user", Content: userText})
+
+	if h.streamingSpeech {
+		reply, queued := h.processStreamingReply(ctx, i18n.Lang(c), userText, avatar, req.UserID, nil)
+		c.JSON(http.StatusOK, liveChatResponse{Status: "success", Sentences: queued, Queued: queued, Reply: reply})
+		return
+	}
 
 	// ---- 1. Long-term memory (GORM -> standard LLM messages) ----
 	msgs := h.recentMessages(avatar.ID, 10)

@@ -18,7 +18,7 @@ services:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
       S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
       CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
-      LIPSYNC_ENGINE: latentsync
+      LIPSYNC_ENGINE: musetalk
   api-live:
     build:
       args:
@@ -29,7 +29,7 @@ services:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
       S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
       CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
-      LIPSYNC_ENGINE: latentsync
+      LIPSYNC_ENGINE: musetalk
   api-scheduler:
     build:
       args:

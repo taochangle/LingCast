@@ -1,0 +1,14 @@
+[Unit]
+Description=LingCast native live stream worker
+After=network-online.target lingcast-cosyvoice.service lingcast-musetalk.service
+Requires=lingcast-cosyvoice.service lingcast-musetalk.service
+[Service]
+TimeoutStartSec=360
+ExecStartPre=/data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime python wait_resident_ready.py
+WorkingDirectory=/data1/taoxin/LingCast/worker
+ExecStart=/data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime python -u stream_worker.py
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+[Install]
+WantedBy=default.target

@@ -16,6 +16,14 @@ if test "${XHS_COLLECTOR_LOCATION:-local}" = server; then
 (cd worker && /data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True); b.close(); p.stop()")
 fi
 "${compose[@]}" build --build-arg "GIT_REVISION=$revision" api-admin api-live api-scheduler frontend-admin
+# Models stay private. Prepare the resident services before switching the live worker.
+if grep -q '^LIPSYNC_ENGINE=musetalk$' worker/.env.local; then
+  cp deploy/lingcast-cosyvoice.service deploy/lingcast-musetalk.service deploy/lingcast-stream.service "$HOME/.config/systemd/user/"
+  systemctl --user daemon-reload
+  systemctl --user enable lingcast-cosyvoice lingcast-musetalk
+  systemctl --user restart lingcast-cosyvoice lingcast-musetalk
+  (cd worker && /data1/taoxin/.local/bin/uv run --frozen --no-default-groups --group resident-runtime python wait_resident_ready.py)
+fi
 # Stop only after all builds succeed. Queued narration remains in Redis.
 systemctl --user stop lingcast-stream
 "${compose[@]}" up -d mysql redis rustfs srs api-admin api-live api-scheduler frontend-admin

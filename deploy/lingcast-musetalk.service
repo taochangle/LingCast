@@ -1,0 +1,13 @@
+[Unit]
+Description=LingCast MuseTalk resident frame stream
+After=network-online.target lingcast-cosyvoice.service
+Requires=lingcast-cosyvoice.service
+[Service]
+EnvironmentFile=/data1/taoxin/LingCast/worker/.env.local
+WorkingDirectory=/data1/taoxin/LingCast/worker
+ExecStart=/data1/taoxin/lingcast-musetalk-bench/.venv/bin/python -u /data1/taoxin/LingCast/worker/musetalk_service.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+[Install]
+WantedBy=default.target

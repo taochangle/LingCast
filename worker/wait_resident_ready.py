@@ -11,8 +11,9 @@ def main():
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
         try:
+            endpoints = ('MUSETALK_RESIDENT_URL','COSYVOICE_URL') if os.environ.get('LIPSYNC_ENGINE') == 'musetalk' else ('INDEXTTS_RESIDENT_URL','LATENTSYNC_RESIDENT_URL')
             ready = all(requests.get(os.environ[name] + '/readyz', timeout=3).json().get('ready')
-                        for name in ('INDEXTTS_RESIDENT_URL', 'LATENTSYNC_RESIDENT_URL'))
+                        for name in endpoints)
             if ready and requests.get(os.environ['API_BASE_URL'] + '/api/live', timeout=3).status_code == 200:
                 print('Models and API ready', flush=True)
                 return

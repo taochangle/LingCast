@@ -355,3 +355,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 - **采集位置更新**：用户选择本机有头浏览器，成都出口小红书返回 300012。使用 deploy/install-local-collector.py 安装本机 LaunchAgent 与 loopback SSH 隧道，XHS_BROWSER_HEADLESS=0；成都默认禁用采集服务，仍负责回复/音视频。公网不新增端口。详情见 docs/xhs-listener.md 顶部当前部署说明。
 
 - **Chrome 插件采集（2026-10-28）**：`extensions/chrome` MV3 插件，通过 activeTab 手动采集本场页面 DOM，service worker 带绑定数字人的 12 小时 Bearer 密钥 POST `/api/collector/session|events`。后台提供下载/生成/撤销/停止/事件展示；默认只采集，欢迎和回复需用户在插件开启。原 Playwright 采集服务继续禁用，client=extension 时旧 Collector 跳过。无新端口。代码变动后需 `python3 extensions/package_chrome.py` 同步 ZIP；验证与边界见 docs/chrome-collector.md。
+
+- **成都流式直播（2026-10-29）**：当前生产直播切换为 Qwen SSE分句 → CosyVoice3（loopback59495）→ MuseTalk逐帧（loopback59496）→ 原FFmpeg/SRS。仅知夏2、若棠3有准备好的profile，见deploy/musetalk-avatars.json；素材不匹配禁止换脸兜底。模型GPU2、常驻预热，参考/环境沿用独立实验；缓存完整音视频事件，重复话术不重复生成。Chrome采集欢迎和回复各2秒限频，保留去重与有界队列。旧模型保留用于回滚；禁止重新启用Playwright。发布与回滚、私有端口、验证详见docs/cosyvoice-musetalk-live.md。
