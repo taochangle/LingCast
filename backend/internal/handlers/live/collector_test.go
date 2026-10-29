@@ -99,7 +99,7 @@ func TestCollectorIntegration(t *testing.T) {
 	if code != 200 || result["accepted"] != float64(0) {
 		t.Fatal("duplicate accepted", code, result)
 	}
-	n, _ := q.ListLen(t.Context(), fmt.Sprintf("live_external_queue:%d", avatar.ID))
+	n, _ := q.ListLen(t.Context(), fmt.Sprintf("live_welcome_queue:%d", avatar.ID))
 	if n != 0 {
 		t.Fatal("listen-only spoke")
 	}
@@ -122,7 +122,7 @@ func TestCollectorIntegration(t *testing.T) {
 			t.Fatal(code, result)
 		}
 	}
-	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_external_queue:%d", avatar.ID))
+	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_welcome_queue:%d", avatar.ID))
 	if n != 1 {
 		t.Fatal("welcome cooldown", n)
 	}
@@ -133,7 +133,7 @@ func TestCollectorIntegration(t *testing.T) {
 	if code, result := request("POST", "/events", token, data); code != 200 {
 		t.Fatal(code, result)
 	}
-	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_external_queue:%d", avatar.ID))
+	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_welcome_queue:%d", avatar.ID))
 	if n != 2 {
 		t.Fatal("streamed welcome must resume after two seconds", n)
 	}
@@ -141,7 +141,7 @@ func TestCollectorIntegration(t *testing.T) {
 	if code, _ := request("POST", "/session", token, map[string]any{"action": "start", "url": data["url"]}); code != 401 {
 		t.Fatal("revoked key accepted")
 	}
-	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_external_queue:%d", avatar.ID))
+	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_welcome_queue:%d", avatar.ID))
 	if n != 0 {
 		t.Fatal("revoke kept queued welcome")
 	}

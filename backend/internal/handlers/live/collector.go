@@ -51,6 +51,7 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 				return
 			}
 			_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
+			_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
 		}
 		c.JSON(200, gin.H{"revoked": true})
 		return
@@ -78,6 +79,7 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 			return
 		}
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
+		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
 	}
 	c.JSON(200, gin.H{"token": token, "avatar_id": id, "avatar_name": avatar.Name, "expires_ms": time.Now().Add(12 * time.Hour).UnixMilli()})
 }
@@ -168,6 +170,7 @@ func (h *LiveHandler) CollectorSession(c *gin.Context) {
 		return
 	}
 	_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_external_queue:%d", id))
+	_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_welcome_queue:%d", id))
 	state := "listening"
 	if !config.Enabled {
 		state = "stopped"
@@ -265,7 +268,11 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 		}
 		signature := tokenDigest(e.Kind + "\x00" + e.Nickname + "\x00" + e.Text)
 		unique, _ := h.q.Claim(ctx, fmt.Sprintf("collector_repeat:%d:%s", id, signature), map[bool]time.Duration{true: 5 * time.Minute, false: 15 * time.Second}[e.Kind == "enter"])
-		queued, _ := h.q.ListLen(ctx, fmt.Sprintf("live_external_queue:%d", id))
+		queueKey := fmt.Sprintf("live_external_queue:%d", id)
+		if e.Kind == "enter" {
+			queueKey = fmt.Sprintf("live_welcome_queue:%d", id)
+		}
+		queued, _ := h.q.ListLen(ctx, queueKey)
 		if unique && enabled && liveCount > 0 && queued < 3 {
 			ready, _ := h.q.Claim(ctx, fmt.Sprintf("collector_cooldown:%d:%s", id, e.Kind), cooldown)
 			if ready {
@@ -282,7 +289,7 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 					}
 					job := gin.H{"text": "欢迎" + name + "来到直播间。", "narration": true, "job_id": fmt.Sprintf("ext-%d", time.Now().UnixNano()), "ts": now, "submitted_ms": now, "xhs_revision": req.Revision}
 					data, _ := json.Marshal(job)
-					if h.q.PushBounded(ctx, fmt.Sprintf("live_external_queue:%d", id), string(data), 3) == nil {
+					if h.q.PushBounded(ctx, queueKey, string(data), 3) == nil {
 						action = "welcome"
 					}
 				} else {

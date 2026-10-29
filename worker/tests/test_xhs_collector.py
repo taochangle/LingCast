@@ -67,9 +67,25 @@ class ExternalQueuePriorityTests(unittest.TestCase):
         from streaming.incoming import pop_live_job
         lists={'live_queue:1':['manual'],'live_external_queue:1':[json.dumps({'xhs_revision':1}),json.dumps({'xhs_revision':2})]}
         client=Mock()
-        client.lpop.side_effect=lambda key:lists[key].pop(0) if lists[key] else None
+        client.lpop.side_effect=lambda key:lists[key].pop(0) if lists.get(key) else None
         client.get.return_value=json.dumps(dict(enabled=True,revision=2))
         self.assertEqual(pop_live_job(client,'live_queue:1',1),'manual')
         self.assertEqual(len(lists['live_external_queue:1']),2)
         self.assertIsNone(pop_live_job(client,'live_queue:1',1))
         self.assertEqual(json.loads(pop_live_job(client,'live_queue:1',1))['xhs_revision'],2)
+
+    def test_comments_precede_welcomes_and_stale_welcomes_are_dropped(self):
+        import json
+        from unittest.mock import Mock
+        from streaming.incoming import pop_live_job
+        lists = {'live_queue:1': ['manual'],
+                 'live_external_queue:1': [json.dumps({'xhs_revision': 2, 'text': 'reply'})],
+                 'live_welcome_queue:1': [json.dumps({'xhs_revision': 1, 'text': 'stale'}),
+                                          json.dumps({'xhs_revision': 2, 'text': 'welcome'})]}
+        client = Mock()
+        client.lpop.side_effect = lambda key: lists[key].pop(0) if lists.get(key) else None
+        client.get.return_value = json.dumps(dict(enabled=True, revision=2))
+        self.assertEqual(pop_live_job(client, 'live_queue:1', 1), 'manual')
+        self.assertEqual(json.loads(pop_live_job(client, 'live_queue:1', 1))['text'], 'reply')
+        self.assertIsNone(pop_live_job(client, 'live_queue:1', 1))
+        self.assertEqual(json.loads(pop_live_job(client, 'live_queue:1', 1))['text'], 'welcome')

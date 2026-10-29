@@ -103,13 +103,14 @@ class Collector:
             # Listening works with the avatar off; speaking requires a live session.
             response=requests.get(f'{self.api}/api/live/{avatar}/status',timeout=(3,5))
             if response.status_code != 200: return
-            if self.redis.llen(f'live_external_queue:{avatar}') >= 3: return
+            queue_key = f'live_welcome_queue:{avatar}' if event['action']=='welcome' else f'live_external_queue:{avatar}'
+            if self.redis.llen(queue_key) >= 3: return
             if event['action']=='welcome':
                 name=re.sub(r'[\x00-\x1f<>\[\]{}]', '', event['nickname'])[:24]
                 job=dict(text=f'欢迎{name}来到直播间。', narration=True, job_id=f'xhs-{time.time_ns()}',
                          ts=int(time.time()*1000),submitted_ms=int(time.time()*1000), xhs_revision=config['revision'])
                 self.redis.eval("if redis.call('LLEN',KEYS[1])>=3 then return 0 end return redis.call('RPUSH',KEYS[1],ARGV[1])",1,
-                                f'live_external_queue:{avatar}',json.dumps(job,ensure_ascii=False))
+                                queue_key,json.dumps(job,ensure_ascii=False))
             elif event['action']=='reply':
                 response=requests.post(f'{self.api}/api/live/{avatar}/message',json=dict(
                     text=f"小红书观众「{event['nickname']}」说：{event['text']}", username=event['nickname'],
