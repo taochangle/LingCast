@@ -26,6 +26,7 @@ test('scoped transport survives worker idle state and rejects content reconfigur
  assert.equal(calls[0].body.url,'https://www.xiaohongshu.com/livestream/123');
  const blocked=await send({type:'LC_START',server:'http://evil.test',token:'stolen'},content);
  assert.equal(blocked.ok,false);
+ session.collector.server='http://stale-server.test';
  const result=await send({type:'LC_EVENTS',revision:session.collector.revision,page_room:content.url,events:[{id:'event-1',kind:'message',nickname:'小雨',text:'你好',observed_ms:Date.now()}],server:'http://evil.test',dom:'listening'},content);
  assert.equal(result.ok,true);
  assert.equal(calls.at(-1).url,'http://127.0.0.1:59480/api/collector/events');

@@ -137,7 +137,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             下载并解压插件，在 chrome://extensions
             开启开发者模式，选择「加载已解压的扩展程序」。
           </li>
-          <li>生成采集密钥，在插件里填写服务器地址和密钥。</li>
+          <li>服务器已固定，在插件里只需填写采集密钥。</li>
           <li>
             手动打开自己的小红书直播页，点击插件「在当前直播页开始」。默认只采集；确认信息后再开启自动欢迎或回复。
           </li>
@@ -167,11 +167,11 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
           </Button>
         </div>
         <div className='flex flex-col gap-2'>
-          <Label htmlFor='collector-server'>插件填写的服务器地址</Label>
+          <Label htmlFor='collector-server'>插件固定的服务器地址</Label>
           <Input
             id='collector-server'
             readOnly
-            value={window.location.origin}
+            value='http://127.0.0.1:59480'
             onFocus={(event) => event.target.select()}
           />
         </div>

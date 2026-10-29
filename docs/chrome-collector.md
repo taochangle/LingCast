@@ -9,13 +9,13 @@
 - 管理员 POST/DELETE `/api/live/:avatarID/collector-token`，生成/撤销绑定数字人的 12 小时随机密钥，Redis 只保存 SHA256，有 TTL。更换密钥会停掉旧扩展会话和旧房间待播队列。
 - 插件 Bearer POST `/api/collector/session`，action=start/stop；start 传正式房间 URL、welcome/reply 开关（插件默认均为 false），返回 revision、server_ms、规范化房间 URL。换房间必须新建会话，刷新/关闭页面后需手动重新开始。
 - 插件 Bearer POST `/api/collector/events`，最多 20 条/32KiB，每 400ms 至多一批。数据为 id/kind/nickname/text/observed_ms，不含 Cookie、输入框、HTML、分享 token 或其他页面内容。后台从密钥决定 avatarId，不信任客户端指定的数字人。
-- 只支持 enter/message，事件过期 30 秒丢弃；客户端握手计算时钟偏差。服务端去重 id 与内容签名、每分钟最多欢迎一次、每 12 秒最多回复一次，外部队列上限受控。关播时只展示，不生成口播。旧房间回复会通过现有 xhs_revision 校验失效。
-- 自动欢迎走 IndexTTS/LatentSync；回复走既有 Qwen + 外部口播队列，优先级：手动 > 互动 > 自主主持。插件只解决采集，不减少模型计算时间。
+- 只支持 enter/message，事件过期 30 秒丢弃；客户端握手计算时钟偏差。服务端去重 id 与内容签名、流式模式欢迎和回复各最多2秒触发一次（旧版模式仍为60秒/12秒），外部队列上限受控。关播时只展示，不生成口播。旧房间回复会通过现有 xhs_revision 校验失效。
+- 自动欢迎走 CosyVoice/MuseTalk 音视频流；回复走 Qwen SSE分句 + 外部口播队列，优先级：手动 > 互动 > 自主主持。插件只解决采集，不减少模型计算时间。
 - CORS 只对 `/api/collector/` 接受格式正确的 chrome-extension origin，其余管理员接口继续只接受既有后台 origin。所有实际采集请求都必须带有效的限定密钥。
-- optional_host_permissions 是可配置服务声明，插件仅请求填写的 LingCast 主机，不申请所有网页访问；activeTab 只在手动点击时授权当前直播页。密钥存储限制为 TRUSTED_CONTEXTS，不下发 content script，消息来源校验绑定 tab/frame/room/revision。关闭弹窗不会停止采集，关闭 Chrome 会停止。
+- 插件服务器固定为 http://127.0.0.1:59480 且不可编辑；optional_host_permissions 只声明该主机，不申请所有网页访问；activeTab 只在手动点击时授权当前直播页。密钥存储限制为 TRUSTED_CONTEXTS，不下发 content script，消息来源校验绑定 tab/frame/room/revision。关闭弹窗不会停止采集，关闭 Chrome 会停止。
 
 ## 验证与限制
 
 Node 测试覆盖权限声明、事件规范化、来源隔离、固定目标上报与刷新/关闭停止。独立 MariaDB + Redis 集成测试覆盖密钥散列、未认证请求、仅展示、重复事件、旧版本拒绝、欢迎冷却和撤销；CORS 单测验证管理员接口未对扩展放开。DOM fixture 验证首屏跳过、表情、进场、主播/点赞排除、节点复用和停止。未用已关闭的真实直播间做“自动回复成功”的声明；需要用户安装插件后在本场直播验证实际 DOM。
 
-DOM 不是平台正式事件协议，页面结构变更、虚拟列表和后台标签页节流可能漏读；不承诺规避平台限制。HTTP 服务器链路不加密；正式 HTTPS 后插件使用相同域名的 HTTPS origin 即可。
+DOM 不是平台正式事件协议，页面结构变更、虚拟列表和后台标签页节流可能漏读；不承诺规避平台限制。HTTP 服务器链路不加密；未来 HTTPS 迁移需同步更新插件固定地址。

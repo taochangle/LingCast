@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 // Source is copied into a data: module so the extension does not need package.json.
 const source=fs.readFileSync(new URL('../protocol.js',import.meta.url),'utf8');
-const {serverOrigin,roomURL,normalizeEvents}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
-test('only explicit server origins and real live-room URLs',()=>{
- assert.equal(serverOrigin('http://127.0.0.1:59480'),'http://127.0.0.1:59480');
+const {SERVER_ORIGIN,roomURL,normalizeEvents}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+test('fixed production server and real live-room URLs',()=>{
+ assert.equal(SERVER_ORIGIN,'http://127.0.0.1:59480');
  assert.equal(roomURL('https://xiaohongshu.com/livestream/123?xsec_token=private'),'https://www.xiaohongshu.com/livestream/123');
- for(const url of ['https://user:pass@test/','file:///etc/passwd','https://test/api','https://test/?key=secret']) assert.throws(()=>serverOrigin(url));
  for(const url of ['https://xhslink.com/o/123','https://www.xiaohongshu.com.evil.test/livestream/123','https://www.xiaohongshu.com/explore/123','http://www.xiaohongshu.com/livestream/123']) assert.throws(()=>roomURL(url));
 });
 test('bounded normalized messages, clock offset, stale messages discarded',()=>{
@@ -24,4 +23,7 @@ test('manifest limits reading to user action, no cookie/network interception per
  assert.equal(manifest.content_scripts,undefined);
  assert.equal(manifest.host_permissions,undefined);
  assert.equal(manifest.externally_connectable,undefined);
+ assert.deepEqual(manifest.optional_host_permissions,['http://127.0.0.1/*']);
+ const popup=fs.readFileSync(new URL('../popup.html',import.meta.url),'utf8');
+ assert.match(popup, /id="server"[^>]*readonly[^>]*value="http:\/\/112\.19\.174\.43:59480"/);
 });

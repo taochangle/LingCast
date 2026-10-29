@@ -1,4 +1,4 @@
-import {serverOrigin, roomURL, normalizeEvents} from './protocol.js';
+import {SERVER_ORIGIN, roomURL, normalizeEvents} from './protocol.js';
 const init=Promise.all([
  chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),
  chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})
@@ -7,7 +7,7 @@ let busy=false;
 async function state() {await init;return (await chrome.storage.session.get('collector')).collector;}
 async function save(value) {await chrome.storage.session.set({collector:value});}
 async function request(config,path,body) {
- const response=await fetch(config.server+'/api/collector/'+path,{method:'POST',credentials:'omit',redirect:'error',
+ const response=await fetch(SERVER_ORIGIN+'/api/collector/'+path,{method:'POST',credentials:'omit',redirect:'error',
    headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},
    body:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
  const result=await response.json().catch(()=>({}));
@@ -52,7 +52,7 @@ async function handle(message,sender) {
  if(message.type==='LC_STOP') {await stop(current);return {ok:true};}
  if(message.type==='LC_START') {
    if(busy) throw new Error('正在上报，请稍后重试');
-   const server=serverOrigin(message.server);
+   const server=SERVER_ORIGIN;
    if(!/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
    const tab=await chrome.tabs.get(message.tabId);const room=roomURL(tab.url);
    if(current?.active) await stop(current);

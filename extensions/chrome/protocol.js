@@ -1,8 +1,4 @@
-export function serverOrigin(raw) {
-  const url = new URL(raw.trim());
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('服务器请只填写地址和端口，例如 http://127.0.0.1:59480');
-  return url.origin;
-}
+export const SERVER_ORIGIN = 'http://127.0.0.1:59480';
 export function roomURL(raw) {
   const url = new URL(raw);
   if (url.protocol !== 'https:' || !['xiaohongshu.com', 'www.xiaohongshu.com'].includes(url.hostname) || url.port || url.username || url.password || !/^\/livestream\/\d+\/?$/.test(url.pathname)) throw new Error('请先切到小红书直播间页面，再点击开始');
