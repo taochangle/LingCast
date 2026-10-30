@@ -1,4 +1,4 @@
-import {SERVER_ORIGIN, roomURL, normalizeEvents} from './protocol.js';
+import {SERVER_ORIGIN, DEFAULT_COLLECTOR_KEY, roomURL, normalizeEvents} from './protocol.js';
 const init=Promise.all([
  chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),
  chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})
@@ -8,7 +8,7 @@ async function state() {await init;return (await chrome.storage.session.get('col
 async function save(value) {await chrome.storage.session.set({collector:value});}
 async function request(config,path,body) {
  const response=await fetch(SERVER_ORIGIN+'/api/collector/'+path,{method:'POST',credentials:'omit',redirect:'error',
-   headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},
+   headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token,'X-LingCast-Avatar-ID':String(config.avatarId || 3)},
    body:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
  const result=await response.json().catch(()=>({}));
  if(!response.ok) {const error=new Error(result.error || `服务器返回 ${response.status}`);error.status=response.status;throw error;}
@@ -53,10 +53,12 @@ async function handle(message,sender) {
  if(message.type==='LC_START') {
    if(busy) throw new Error('正在上报，请稍后重试');
    const server=SERVER_ORIGIN;
-   if(!/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
+   if(message.token!==DEFAULT_COLLECTOR_KEY && !/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
+   const avatarId=Number(message.avatarId || 3);
+   if(!Number.isSafeInteger(avatarId) || avatarId<1 || avatarId>4294967295) throw new Error('数字人 ID 无效');
    const tab=await chrome.tabs.get(message.tabId);const room=roomURL(tab.url);
    if(current?.active) await stop(current);
-   const config={server,token:message.token,tabId:tab.id,welcome:!!message.welcome,reply:!!message.reply,thanks:!!message.thanks};
+   const config={server,avatarId,token:message.token,tabId:tab.id,welcome:!!message.welcome,reply:!!message.reply,thanks:!!message.thanks};
    const startedAt=Date.now();const result=await request(config,'session',{action:'start',url:room,welcome:config.welcome,reply:config.reply,thanks:config.thanks});
    const active={...config,room,revision:result.revision,offset:result.server_ms-Math.round((startedAt+Date.now())/2),active:true,received:0,message:'正在连接直播页面'};
    await save(active);
@@ -64,7 +66,7 @@ async function handle(message,sender) {
      await chrome.scripting.executeScript({target:{tabId:tab.id},files:['dom-reader.js','content.js']});
      await chrome.tabs.sendMessage(tab.id,{type:'LC_BEGIN',revision:active.revision});
    } catch(error) {await stop(active,'无法读取当前页面，请刷新后重新开始');throw error;}
-   await chrome.storage.local.set({prefs:{server,token:config.token,welcome:config.welcome,reply:config.reply,thanks:config.thanks}});
+   await chrome.storage.local.set({prefs:{server,avatarId,token:config.token,welcome:config.welcome,reply:config.reply,thanks:config.thanks}});
    await chrome.alarms.create('collector-heartbeat',{periodInMinutes:1});
    return {ok:true};
  }

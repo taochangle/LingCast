@@ -2,10 +2,8 @@ package live
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,10 +19,14 @@ import (
 	"talkingavatar/backend/internal/models"
 )
 
+const defaultCollectorKey = "REDACTED_COLLECTOR_KEY"
+
+func collectorDisabledKey(id uint64) string { return fmt.Sprintf("live_collector_disabled:%d", id) }
+
 func collectorTokenKey(id uint64) string { return fmt.Sprintf("live_collector_token:%d", id) }
 func tokenDigest(token string) string {
 	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	return fmt.Sprintf("%x", sum[:])
 }
 
 // CollectorPair grants only collector access to this avatar. Rotation revokes old keys.
@@ -40,7 +42,7 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 		return
 	}
 	if c.Request.Method == http.MethodDelete {
-		if h.q.DeleteKey(c.Request.Context(), collectorTokenKey(id)) != nil {
+		if h.q.WriteValue(c.Request.Context(), collectorDisabledKey(id), "1") != nil || h.q.DeleteKey(c.Request.Context(), collectorTokenKey(id)) != nil {
 			c.JSON(503, gin.H{"error": "撤销失败"})
 			return
 		}
@@ -59,14 +61,9 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 		c.JSON(200, gin.H{"revoked": true})
 		return
 	}
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		c.JSON(500, gin.H{"error": "密钥生成失败"})
-		return
-	}
-	token := fmt.Sprintf("lc_%d_%s", id, hex.EncodeToString(bytes))
-	if h.q.WriteValueTTL(c.Request.Context(), collectorTokenKey(id), tokenDigest(token), 12*time.Hour) != nil {
-		c.JSON(503, gin.H{"error": "密钥保存失败"})
+	token := defaultCollectorKey
+	if h.q.WriteValue(c.Request.Context(), collectorTokenKey(id), tokenDigest(token)) != nil || h.q.DeleteKey(c.Request.Context(), collectorDisabledKey(id)) != nil {
+		c.JSON(503, gin.H{"error": "密钥启用失败"})
 		return
 	}
 	config, readErr := h.readXHS(c.Request.Context(), id)
@@ -86,10 +83,36 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_gift_queue:%d", id))
 		_ = h.q.DeleteKey(c.Request.Context(), fmt.Sprintf("live_like_queue:%d", id))
 	}
-	c.JSON(200, gin.H{"token": token, "avatar_id": id, "avatar_name": avatar.Name, "expires_ms": time.Now().Add(12 * time.Hour).UnixMilli()})
+	c.JSON(200, gin.H{"token": token, "avatar_id": id, "avatar_name": avatar.Name, "expires_ms": 0})
 }
 func (h *LiveHandler) collectorIdentity(c *gin.Context) (uint64, bool) {
 	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(defaultCollectorKey)) == 1 {
+		rawID := c.GetHeader("X-LingCast-Avatar-ID")
+		if rawID == "" {
+			rawID = "3"
+		}
+		id, err := strconv.ParseUint(rawID, 10, 32)
+		if err != nil || id == 0 {
+			c.JSON(400, gin.H{"error": "数字人 ID 无效"})
+			return 0, false
+		}
+		disabled, err := h.q.ReadValue(c.Request.Context(), collectorDisabledKey(id))
+		if err != nil {
+			c.JSON(503, gin.H{"error": "采集认证暂不可用"})
+			return 0, false
+		}
+		if disabled != "" {
+			c.JSON(401, gin.H{"error": "采集已撤销，请在后台重新启用"})
+			return 0, false
+		}
+		var avatar models.Avatar
+		if h.db.First(&avatar, id).Error != nil {
+			c.JSON(404, gin.H{"error": "数字人不存在"})
+			return 0, false
+		}
+		return id, true
+	}
 	parts := strings.Split(token, "_")
 	if len(parts) != 3 || parts[0] != "lc" || len(parts[2]) != 64 {
 		c.JSON(401, gin.H{"error": "采集密钥无效或已过期"})

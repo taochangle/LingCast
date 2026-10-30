@@ -49,3 +49,11 @@ test('same-tab SPA room changes fail closed before upload',async()=>{
  const result=await send({type:'LC_EVENTS',revision:session.collector.revision,page_room:'https://www.xiaohongshu.com/livestream/456',events:[]},content);
  assert.equal(result.stop,true);assert.equal(session.collector.active,false);
 });
+test('fixed default key supports explicit avatar binding without copying a token',async()=>{
+ const result=await send({type:'LC_START',token:'REDACTED_COLLECTOR_KEY',avatarId:2,tabId:1});
+ assert.equal(result.ok,true);
+ const request=calls.findLast(call=>call.url.endsWith('/session') && JSON.parse(call.options.body).action==='start');
+ assert.equal(request.options.headers.Authorization,'Bearer REDACTED_COLLECTOR_KEY');
+ assert.equal(request.options.headers['X-LingCast-Avatar-ID'],'2');
+ assert.equal((await send({type:'LC_START',token:'REDACTED_COLLECTOR_KEY',avatarId:-1,tabId:1})).ok,false);
+});

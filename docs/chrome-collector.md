@@ -6,7 +6,7 @@
 
 ## 协议和边界
 
-- 管理员 POST/DELETE `/api/live/:avatarID/collector-token`，生成/撤销绑定数字人的 12 小时随机密钥，Redis 只保存 SHA256，有 TTL。更换密钥会停掉旧扩展会话和旧房间待播队列。
+- 管理员 POST/DELETE `/api/live/:avatarID/collector-token`，启用/停用默认采集密钥 `REDACTED_COLLECTOR_KEY`，长期有效。插件与后台默认填写，无需复制；`X-LingCast-Avatar-ID` 明确选择数字人，未传时默认3，仍校验数字人存在。停用状态写入Redis，停用后默认密钥也拒绝认证；后台重新启用会停止旧会话并清空待播队列。旧版随机Bearer密钥按原有效期兼容，插件迁移为默认密钥。管理员登录认证不变。
 - 插件 Bearer POST `/api/collector/session`，action=start/stop；start 传正式房间 URL、welcome/reply 开关（插件默认均为 false），返回 revision、server_ms、规范化房间 URL。换房间必须新建会话，刷新/关闭页面后需手动重新开始。
 - 插件 Bearer POST `/api/collector/events`，最多 20 条/32KiB，每 400ms 至多一批。数据为 id/kind/nickname/text/observed_ms，不含 Cookie、输入框、HTML、分享 token 或其他页面内容。后台从密钥决定 avatarId，不信任客户端指定的数字人。
 - 支持 enter/message/like/gift，事件过期 30 秒丢弃；客户端握手计算时钟偏差。服务端去重 id 与内容签名、流式模式欢迎和回复各最多2秒触发一次（旧版模式仍为60秒/12秒），评论与欢迎独立限量排队，欢迎排满不会阻止评论触发回复。关播时只展示，不生成口播。旧房间回复会通过现有 xhs_revision 校验失效。

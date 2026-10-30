@@ -1,7 +1,8 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="popup.css"><title>LingCast 互动采集</title>
 <body><h1>直播互动采集</h1><p>在小红书直播页点击开始，只读取新增聊天、进场、点赞和送礼提示。</p>
 <form id="form"><label>LingCast 服务器<input id="server" type="url" readonly value="http://127.0.0.1:59480" title="固定服务器地址"></label>
-<label>采集密钥<input id="token" type="password" required autocomplete="off" placeholder="在直播台生成，12小时有效"></label>
+<label>数字人 ID<input id="avatar" type="number" min="1" max="4294967295" value="3" required></label>
+<label>采集密钥<input id="token" type="password" required autocomplete="off" value="REDACTED_COLLECTOR_KEY" placeholder="默认 REDACTED_COLLECTOR_KEY"></label>
 <label class="choice"><input id="welcome" type="checkbox">自动欢迎进场</label><label class="choice"><input id="reply" type="checkbox">自动回复聊天</label>
 <label class="choice"><input id="thanks" type="checkbox">自动感谢点赞/礼物</label>
 <p>所有开关都关闭时只采集展示；开启后由服务器生成口播。</p><div><button id="start" type="submit">在当前直播页开始</button><button id="stop" type="button">停止采集</button></div></form>

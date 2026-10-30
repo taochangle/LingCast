@@ -1,3 +1,4 @@
+export const DEFAULT_COLLECTOR_KEY = 'REDACTED_COLLECTOR_KEY';
 export const SERVER_ORIGIN = 'http://127.0.0.1:59480';
 export function roomURL(raw) {
   const url = new URL(raw);

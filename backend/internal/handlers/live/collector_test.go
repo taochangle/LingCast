@@ -74,6 +74,9 @@ func TestCollectorIntegration(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
+			if token == defaultCollectorKey {
+				req.Header.Set("X-LingCast-Avatar-ID", fmt.Sprint(avatar.ID))
+			}
 		}
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
@@ -84,11 +87,17 @@ func TestCollectorIntegration(t *testing.T) {
 	if code, _ := request("POST", "/session", "", nil); code != 401 {
 		t.Fatal(code)
 	}
+	if code, _ := request("POST", "/session", defaultCollectorKey, map[string]any{"action": "start", "url": "https://www.xiaohongshu.com/livestream/123"}); code != 200 {
+		t.Fatal("default requires manual pairing", code)
+	}
 	code, pair := request("POST", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
 	if code != 200 {
 		t.Fatal(code, pair)
 	}
 	token := pair["token"].(string)
+	if token != defaultCollectorKey || pair["expires_ms"] != float64(0) {
+		t.Fatal("wrong default key or expiry")
+	}
 	digest, _ := q.ReadValue(t.Context(), collectorTokenKey(uint64(avatar.ID)))
 	if digest == token || digest != tokenDigest(token) {
 		t.Fatal("raw token persisted")
@@ -214,6 +223,10 @@ func TestCollectorIntegration(t *testing.T) {
 	n, _ = q.ListLen(t.Context(), fmt.Sprintf("live_welcome_queue:%d", avatar.ID))
 	if n != 0 {
 		t.Fatal("revoke kept queued welcome")
+	}
+	request("POST", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
+	if code, _ := request("POST", "/session", defaultCollectorKey, map[string]any{"action": "start", "url": data["url"]}); code != 200 {
+		t.Fatal("default re-enable failed", code)
 	}
 }
 

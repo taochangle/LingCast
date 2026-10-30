@@ -48,7 +48,7 @@ function message(error: unknown) {
 }
 export function XHSListener({ avatarId }: { avatarId: number }) {
   const [data, setData] = useState<Result | null>(null)
-  const [token, setToken] = useState('')
+  const [token, setToken] = useState('REDACTED_COLLECTOR_KEY')
   const [checkedAt, setCheckedAt] = useState(0)
   const [expires, setExpires] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -88,7 +88,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
         )
         setToken(data.token)
         setExpires(data.expires_ms)
-        toast.success('采集密钥已生成，旧密钥已失效')
+        toast.success('默认采集密钥已启用')
       } else if (action === 'revoke') {
         await api.delete(`/live/${avatarId}/collector-token`)
         setToken('')
@@ -138,7 +138,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             下载并解压插件，在 chrome://extensions
             开启开发者模式，选择「加载已解压的扩展程序」。
           </li>
-          <li>服务器已固定，在插件里只需填写采集密钥。</li>
+          <li>服务器和密钥已默认填写，插件数字人 ID 请设为 {avatarId}。</li>
           <li>
             手动打开自己的小红书直播页，点击插件「在当前直播页开始」。默认只采集；确认信息后再开启自动欢迎或回复。
           </li>
@@ -150,7 +150,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             </a>
           </Button>
           <Button disabled={busy} onClick={() => void act('pair')}>
-            生成 / 更换采集密钥
+            启用默认采集密钥
           </Button>
           <Button
             variant='outline'
@@ -164,7 +164,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             disabled={busy}
             onClick={() => void act('revoke')}
           >
-            撤销采集密钥
+            停用采集密钥
           </Button>
         </div>
         <div className='flex flex-col gap-2'>
@@ -192,8 +192,8 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
               </Button>
             </div>
             <p className='text-xs text-muted-foreground'>
-              有效至 {new Date(expires).toLocaleString()}
-              ，仅授权当前数字人的采集接口。刷新后不再显示；更换密钥会停止旧插件会话。
+              {expires ? `有效至 ${new Date(expires).toLocaleString()}` : '默认密钥长期有效'}
+              ；插件按数字人 ID 绑定采集。停用后需在这里重新启用，管理员登录密码不受影响。
             </p>
           </div>
         )}
