@@ -131,12 +131,13 @@ class HostDirector:
                     return text, clip
             self.future = (config['run_id'], index, self.executor.submit(prepare))
 
-        if library and len(self.library) == len(scripts) and not self.active and pipeline_idle and not manual_busy and time.monotonic() >= self.due:
-            hints={i for i in config.get('wardrobe_hint_indices',[]) if type(i) is int and 0<=i<len(scripts)}
-            due_hint=(config.get('wardrobe_enabled') and wardrobe_available and hints
+        hints={i for i in config.get('wardrobe_hint_indices',[]) if type(i) is int and 0<=i<len(scripts)}
+        ordinary_ready=set(self.library)-hints
+        if library and ordinary_ready and not self.active and pipeline_idle and not manual_busy and time.monotonic() >= self.due:
+            due_hint=(config.get('wardrobe_enabled') and wardrobe_available and hints.intersection(self.library)
                       and self.completed-self.last_hint_completed>=3 and time.monotonic()>=self.next_wardrobe_hint)
             if due_hint:
-                ordered=sorted(hints)
+                ordered=sorted(hints.intersection(self.library))
                 index=ordered[self.hint_cursor%len(ordered)]
                 self.hint_cursor+=1
                 self.next_wardrobe_hint=time.monotonic()+240
@@ -144,8 +145,8 @@ class HostDirector:
             else:
                 if not self.library_order:
                     welcome_count = config.get('welcome_count', len(scripts)//2)
-                    welcomes = [i for i in range(welcome_count) if i not in hints]
-                    others = [i for i in range(welcome_count,len(scripts)) if i not in hints]
+                    welcomes = [i for i in range(welcome_count) if i in ordinary_ready]
+                    others = [i for i in range(welcome_count,len(scripts)) if i in ordinary_ready]
                     random.shuffle(welcomes)
                     random.shuffle(others)
                     for first, second in zip(welcomes, others):
@@ -175,7 +176,7 @@ class HostDirector:
             logger.info('[HOST] run=%s enqueue paragraph=%d', config['run_id'], index+1)
             return text, clip
         else:
-            self.report(r, 'waiting' if self.ready or (library and len(self.library) == len(scripts)) else 'preparing')
+            self.report(r, 'waiting' if self.ready or (library and ordinary_ready) else 'preparing')
         return None
 
     def clear_library(self):

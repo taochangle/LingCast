@@ -135,7 +135,7 @@ export function HostPanel({
       <CardHeader>
         <CardTitle>自主主持</CardTitle>
         <CardDescription>
-          话术库准备好后持续循环；也可以在下方自定义一轮讲稿。手动口播在当前短段结束后优先播放。
+          首段话术准备好就开始循环，其余话术后台补齐；也可以在下方自定义一轮讲稿。手动口播在当前短段结束后优先播放。
         </CardDescription>
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
@@ -147,8 +147,8 @@ export function HostPanel({
           <p className='text-sm text-muted-foreground'>
             {state?.library?.length || 24}{' '}
             条话术，欢迎优先，穿插自我介绍、日常闲聊与轻松互动。
-            首次全部生成后开始循环，段间停顿 2～4
-            秒；播放期间直接复用视频，手动口播优先。
+            首段生成后开始循环，段间停顿 2～4
+            秒；其余话术后台补齐，手动口播优先。
           </p>
           <div>
             <Button
@@ -174,7 +174,7 @@ export function HostPanel({
             </ol>
           </details>
           <p className='text-xs text-muted-foreground'>
-            首次准备需要等待，可查看下方进度。后续同素材、音色和模型配置复用缓存；暂停、继续和结束使用下方按钮。
+            首次或换装后先准备当前造型的首段，随后边播边补齐，可查看下方进度。后续同素材、音色和模型配置复用缓存；暂停、继续和结束使用下方按钮。
           </p>
         </section>
         <form

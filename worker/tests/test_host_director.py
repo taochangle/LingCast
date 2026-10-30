@@ -115,12 +115,12 @@ class HostDirectorTests(unittest.TestCase):
         self.tick()
         self.assertIsNotNone(self.tick())
 
-    def test_library_prepares_all_then_replays_without_model_calls(self):
+    def test_complete_library_replays_without_model_calls(self):
         self.config.update(kind='library', welcome_count=2,
                            scripts=['欢迎来坐一会儿。', '欢迎来到这里。', '我是数字人知夏。', '今天放松一下吧。'])
         self.save()
         for _ in range(4):
-            self.assertIsNone(self.tick())
+            self.assertIsNone(self.tick(idle=False))
         self.assertEqual(self.renderer.render.call_count, 4)
         seen = []
         for _ in range(12):
@@ -144,6 +144,24 @@ class HostDirectorTests(unittest.TestCase):
         self.config.update(mode='stopped', command='stop'); self.save()
         self.assertIsNone(self.tick())
         self.assertFalse(self.director.library)
+
+    def test_new_outfit_starts_after_first_ready_paragraph_while_rest_is_pending(self):
+        self.config.update(kind='library',welcome_count=2);self.save()
+        pending=[]
+        def submit(fn):
+            future=Future();pending.append((fn,future));return future
+        self.director.executor.submit=submit
+        self.assertIsNone(self.tick())
+        fn,future=pending.pop(0);future.set_result(fn())
+        first=self.tick()
+        self.assertEqual(first[0],self.config['scripts'][0])
+        self.assertEqual(len(self.director.library),1)
+        self.assertFalse(self.director.future[2].done())
+        self.assertIsNone(self.tick(manual=True))
+        self.assertEqual(self.tick()[0],self.config['scripts'][0])
+        self.assertEqual(self.renderer.render.call_count,1)
+        self.config.update(mode='paused',command='pause');self.save()
+        self.assertIsNone(self.tick())
 
     def test_preparation_is_serialized_between_avatars(self):
         from threading import Event, Lock
@@ -195,7 +213,8 @@ class WardrobeHintTests(unittest.TestCase):
         self.save()
         def tick(available=True,manual=False):
             return self.director.tick(self.redis,self.renderer,'base',self.temp.name,True,manual,wardrobe_available=available)
-        for _ in range(3):self.assertIsNone(tick())
+        for _ in range(3):
+            self.assertIsNone(self.director.tick(self.redis,self.renderer,'base',self.temp.name,False,False))
         # Let the time gate pass; three ordinary paragraphs are still required.
         self.director.next_wardrobe_hint=0
         first=[tick()[0] for _ in range(3)]
