@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 // Source is copied into a data: module so the extension does not need package.json.
 const source=fs.readFileSync(new URL('../protocol.js',import.meta.url),'utf8');
-const {SERVER_ORIGIN,roomURL,normalizeEvents}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
-test('fixed production server and real live-room URLs',()=>{
- assert.equal(SERVER_ORIGIN,'http://127.0.0.1:59480');
+const {SERVER_ORIGIN,serverOrigin,roomURL,normalizeEvents}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+test('default server comes from local packaging and live-room URLs are validated',()=>{
+ assert.equal(SERVER_ORIGIN,'');
+ assert.equal(serverOrigin('https://collector.example.invalid:8443/'),'https://collector.example.invalid:8443');
+ for(const url of ['file:///tmp/a','https://user:password@example.invalid','https://example.invalid/path','https://example.invalid?key=private','https://example.invalid/#fragment']) assert.throws(()=>serverOrigin(url));
  assert.equal(roomURL('https://xiaohongshu.com/livestream/123?xsec_token=private'),'https://www.xiaohongshu.com/livestream/123');
  for(const url of ['https://xhslink.com/o/123','https://www.xiaohongshu.com.evil.test/livestream/123','https://www.xiaohongshu.com/explore/123','http://www.xiaohongshu.com/livestream/123']) assert.throws(()=>roomURL(url));
 });
@@ -23,9 +25,11 @@ test('manifest limits reading to user action, no cookie/network interception per
  assert.equal(manifest.content_scripts,undefined);
  assert.equal(manifest.host_permissions,undefined);
  assert.equal(manifest.externally_connectable,undefined);
- assert.deepEqual(manifest.optional_host_permissions,['http://127.0.0.1/*']);
+ assert.deepEqual(manifest.optional_host_permissions,['http://*/*','https://*/*']);
  const popup=fs.readFileSync(new URL('../popup.html',import.meta.url),'utf8');
- assert.match(popup, /id="server"[^>]*readonly[^>]*value="http:\/\/127\.0\.0\.1:59480"/);
+ const input=popup.match(/<input id="server"[^>]*>/)[0];
+ assert.doesNotMatch(input,/readonly/);
+ assert.match(input,/value=""/);
 });
 
 test('dynamic share paths identify the same room without forwarding share tokens',()=>{

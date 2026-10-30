@@ -50,4 +50,4 @@ CosyVoice和MuseTalk使用各自独立模型环境，原生Worker使用 `residen
 
 ## 部署信息与插件打包
 
-私有.env必须设置LINGCAST_PUBLIC_ORIGIN（HTTP(S) origin，不带路径）。Compose由此设置S3公开链接及CORS；前端显示window.location.origin，不编译真实地址。插件以`LINGCAST_PUBLIC_ORIGIN=<私有值> python3 extensions/package_chrome.py`打包，ZIP不进Git，也不含任何密钥。采集改为后台生成每数字人随机Bearer，旧共享口令已废弃。不要把私有.env、数据库、真实采集数据、构建ZIP或历史备份bundle提交到Git。
+私有.env必须设置LINGCAST_PUBLIC_ORIGIN（HTTP(S) origin，不带路径）。Compose由此设置S3公开链接及CORS；前端显示window.location.origin，不编译真实地址。插件以`python3 extensions/package_chrome.py`（默认读取私有.env）打包，ZIP不进Git，也不含任何密钥。采集改为后台生成每数字人随机Bearer，旧共享口令已废弃。不要把私有.env、数据库、真实采集数据、构建ZIP或历史备份bundle提交到Git。

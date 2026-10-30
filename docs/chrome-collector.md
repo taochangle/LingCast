@@ -12,7 +12,7 @@
 - 支持 enter/message/like/gift，事件过期 30 秒丢弃；客户端握手计算时钟偏差。服务端去重 id 与内容签名、流式模式欢迎和回复各最多2秒触发一次（旧版模式仍为60秒/12秒），评论与欢迎独立限量排队，欢迎排满不会阻止评论触发回复。关播时只展示，不生成口播。旧房间回复会通过现有 xhs_revision 校验失效。
 - 自动欢迎走 CosyVoice/MuseTalk 音视频流；回复走 Qwen SSE分句 + 外部口播队列，优先级：手动口播 > 礼物感谢 > 点赞感谢 > 评论回复 > 欢迎 > 自主主持。插件只解决采集，不减少模型计算时间。
 - CORS 只对 `/api/collector/` 接受格式正确的 chrome-extension origin，其余管理员接口继续只接受既有后台 origin。所有实际采集请求都必须带有效的限定密钥。
-- 插件服务器由本地打包时注入且不可编辑；optional_host_permissions 只声明打包时指定的主机，不申请所有网页访问；activeTab 只在手动点击时授权当前直播页。密钥存储限制为 TRUSTED_CONTEXTS，不下发 content script，消息来源校验绑定 tab/frame/room/revision。关闭弹窗不会停止采集，关闭 Chrome 会停止。
+- 插件默认服务器从私有.env打包时注入，字段可编辑并本地保存；optional_host_permissions 声明HTTP/HTTPS可选范围，实际只在用户点击开始时请求其填写的单个主机权限，不申请所有网页访问；activeTab 只在手动点击时授权当前直播页。密钥存储限制为 TRUSTED_CONTEXTS，不下发 content script，消息来源校验绑定 tab/frame/room/revision。关闭弹窗不会停止采集，关闭 Chrome 会停止。
 
 ## 验证与限制
 

@@ -1,4 +1,11 @@
-export const SERVER_ORIGIN = 'http://127.0.0.1:59480';
+// Filled from private .env by package_chrome.py; never commit a real origin.
+export const SERVER_ORIGIN = '';
+export function serverOrigin(raw) {
+  let url;
+  try {url=new URL(raw);} catch {throw new Error('请填写有效的 LingCast 服务器地址');}
+  if(!['http:','https:'].includes(url.protocol) || url.username || url.password || !['','/'].includes(url.pathname) || url.search || url.hash) throw new Error('服务器地址只填写 HTTP(S) 主机和端口，不带路径或密钥');
+  return url.origin;
+}
 export function roomURL(raw) {
   const url = new URL(raw);
   const room = url.pathname.match(/^\/livestream\/(?:dynpath[A-Za-z0-9_-]+\/)?(\d+)\/?$/);

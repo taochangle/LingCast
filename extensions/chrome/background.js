@@ -1,4 +1,4 @@
-import {SERVER_ORIGIN, roomURL, normalizeEvents} from './protocol.js';
+import {SERVER_ORIGIN, serverOrigin, roomURL, normalizeEvents} from './protocol.js';
 const init=Promise.all([
  chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),
  chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})
@@ -7,7 +7,7 @@ let busy=false;
 async function state() {await init;return (await chrome.storage.session.get('collector')).collector;}
 async function save(value) {await chrome.storage.session.set({collector:value});}
 async function request(config,path,body) {
- const response=await fetch(SERVER_ORIGIN+'/api/collector/'+path,{method:'POST',credentials:'omit',redirect:'error',
+ const response=await fetch(serverOrigin(config.server)+'/api/collector/'+path,{method:'POST',credentials:'omit',redirect:'error',
    headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token,'X-LingCast-Avatar-ID':String(config.avatarId || 3)},
    body:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
  const result=await response.json().catch(()=>({}));
@@ -49,10 +49,17 @@ async function handle(message,sender) {
    const safe=current ? {active:current.active,received:current.received,message:current.message,room:current.room,lastUpload:current.lastUpload} : null;
    return {ok:true,prefs,status:safe};
  }
+ if(message.type==='LC_SAVE_SERVER') {
+   const server=serverOrigin(message.server);
+   const prefs=(await chrome.storage.local.get('prefs')).prefs || {};
+   const changed=server!==(prefs.server || SERVER_ORIGIN);
+   await chrome.storage.local.set({prefs:{...prefs,server,...(changed?{token:''}:{})}});
+   return {ok:true,server,changed};
+ }
  if(message.type==='LC_STOP') {await stop(current);return {ok:true};}
  if(message.type==='LC_START') {
    if(busy) throw new Error('正在上报，请稍后重试');
-   const server=SERVER_ORIGIN;
+   const server=serverOrigin(message.server || SERVER_ORIGIN);
    if(!/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
    const avatarId=Number(message.avatarId || 3);
    if(!Number.isSafeInteger(avatarId) || avatarId<1 || avatarId>4294967295) throw new Error('数字人 ID 无效');
