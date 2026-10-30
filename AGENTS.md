@@ -369,3 +369,5 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 - **ID3换装**：精确「换衣服/换一套衣服」触发白衣→酒红→香槟轮换。当前讲话结束后，严格intro完整口播→静音离场/空镜/入场→writer提交新idle/renderer并先显示idle→outro口播→释放互动队列。每方向三个文件，失败不使用未准备造型，重新开播恢复白衣。见docs/wardrobe.md。
 - **主持换装提醒**：ID3主持话术库三条固定提示，4分钟限频且至少隔3段普通主持；插件采集/回复、完整manifest和全部口型ready才提醒，不自动换装。旧任务需重新启动话术库。
 - **发布边界**：新造型3002/3003使用loopback59497独立wardrobe服务，原白衣/知夏仍走59496并保留缓存。原CosyVoice、MuseTalk、IndexTTS、LatentSync不得为此重启；只定向API/前端/stream Worker，不跑全量chengdu.sh。runtime/wardrobe.json为实际清单，仓库示例仍默认关闭；59509是本地预览，实际验证证据另见runtime/wardrobe-verification。
+
+- **换装素材v3（2026-10-30）**：酒红/香槟新idle已获用户确认，白衣和原进出场不变；两套各27条主持话术已预生成并复读验证缓存命中。当前新造型使用新增的loopback59498独立副本，旧59497保留用于回退；私有`WARDROBE_MANIFEST`指向`runtime/wardrobe-approved-v3.json`。用户批准后仅重启stream Worker，原模型PID未变。两次换装后主持恢复、24条常规稿ready；本轮为素材/私有配置发布，无API镜像更新。不要按上面的初版59497说明覆盖当前配置，也不要宣称当前支持无缝不停播热更。详情见docs/wardrobe.md；实际地址、密钥及runtime证据禁止提交。
