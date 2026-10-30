@@ -26,6 +26,25 @@ class StreamingMuse:
   subprocess.run(['ffmpeg','-v','error','-y','-i',str(root/'inputs/speech.wav'),'-t','1.16','-ar','24000',str(warm)],check=True)
   for name in self.avatars:
    self.render(name,warm,lambda frame,index:None)
+ def register_prepared(self,name,expected_sha256):
+  # No checkpoint reload or face preparation here. Operator builds the profile offline.
+  import hashlib
+  video=root/'inputs'/f'{name}.mp4'
+  profile=root/'source/results/v15/avatars'/('bench_'+name)
+  if not video.is_file() or hashlib.sha256(video.read_bytes()).hexdigest()!=expected_sha256:
+   raise ValueError('New look input does not match prepared identity')
+  info=json.loads((profile/'avator_info.json').read_text())
+  if info.get('bbox_shift')!=0 or info.get('version')!='v15' or (profile/'lingcast-source.sha256').read_text().strip()!=expected_sha256:
+   raise ValueError('New look must be prepared offline for this video')
+  for file in ['latents.pt','coords.pkl','mask_coords.pkl']:
+   if not (profile/file).is_file():raise ValueError('Incomplete prepared look')
+  if not list((profile/'full_imgs').glob('*.png')) or not list((profile/'mask').glob('*.png')):
+   raise ValueError('Prepared look frames/masks missing')
+  self.avatars[name]=m.Avatar('bench_'+name,str(video),0,8,False)
+  try:self.render(name,root/'inputs/speech.wav',lambda frame,index:None)
+  except BaseException:
+   self.avatars.pop(name,None)
+   raise
  def render(self,name,audio,callback,frame_offset=0):
   avatar=copy.copy(self.avatars[name]);errors=[]
   # Rotate appearance and matching latents together; preserve pose across audio windows.

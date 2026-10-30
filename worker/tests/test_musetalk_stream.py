@@ -90,4 +90,26 @@ class StreamTests(unittest.TestCase):
         with patch('ai.musetalk_client.requests.post',return_value=Response()):
             with self.assertRaises(RuntimeError):list(MuseRenderer(2).events('hi',self.base))
 
+    def test_prepared_look_adds_profile_without_replacing_model(self):
+        model = self.service.model
+        from unittest.mock import Mock
+        model.register_prepared = Mock()
+        look={'profile':'ruotang_blue','base_key':'scene_videos/blue.mp4','input_sha256':'a'*64}
+        with patch.object(self.service,'AVATARS',dict(self.service.AVATARS)),patch('ai.prepared_looks.prepared_looks',return_value={'3001':look}):
+            renderer=MuseRenderer(3001)
+            renderer.warmup(look['base_key'])
+            renderer.warmup(look['base_key'])
+            model.register_prepared.assert_called_once_with('ruotang_blue','a'*64)
+            self.assertIs(self.service.model,model)
+            events=list(renderer.events('换好衣服啦。',look['base_key']))
+            self.assertEqual(events[-1]['type'],'done')
+
+class AppearanceRoutingTests(unittest.TestCase):
+    def test_new_appearance_routes_separately_and_original_stays_on_existing_service(self):
+        with patch.dict(os.environ, {'MUSETALK_RESIDENT_URL':'http://original', 'MUSETALK_WARDROBE_URL':'http://wardrobe', 'RESIDENT_API_TOKEN':'test'}):
+            self.assertEqual(MuseRenderer(3).url, 'http://original')
+            self.assertEqual(MuseRenderer(3002).url, 'http://wardrobe')
+            self.assertEqual(MuseRenderer(3003).url, 'http://wardrobe')
+            self.assertEqual(MuseRenderer(2).url, 'http://original')
+
 if __name__ == '__main__':unittest.main()

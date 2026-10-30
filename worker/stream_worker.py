@@ -134,15 +134,16 @@ def parse_live_message(raw: str) -> tuple[str, str | None, str | None, int]:
 class _TalkingSegment:
     """One lip-synced sentence waiting in the ready-frames queue."""
 
-    __slots__ = ("text", "audio", "total_frames", "frames_written", "pos", "telemetry")
+    __slots__ = ("text", "audio", "total_frames", "frames_written", "pos", "telemetry", "phase")
 
-    def __init__(self, text: str, audio: bytes, total_frames: int, telemetry=None):
+    def __init__(self, text: str, audio: bytes, total_frames: int, telemetry=None, phase=None):
         self.text = text
         self.audio = audio
         self.total_frames = total_frames
         self.frames_written = 0
         self.pos = 0
         self.telemetry = telemetry or {}
+        self.phase = phase
 
     def next_slice(self, bytes_per_slice: int) -> bytes:
         """Next sequential audio slice (0.5s chunks), empty when exhausted."""
@@ -258,6 +259,10 @@ class LiveAvatarSession:
         # produces it. When empty, the writer falls back to base frames.
         self._talk_queue: queue_mod.Queue = queue_mod.Queue(maxsize=75 if os.environ.get("LIPSYNC_ENGINE") == "musetalk" else 4096)
         self._muse_play_lock = threading.Lock()
+        self._wardrobe_active = False
+        self._wardrobe_pending = None
+        self._wardrobe_current = None
+        self._wardrobe_visual_hold = None
         # Finished TTS results waiting for the frame producer (text, wav|None).
         self._pending: queue_mod.Queue = queue_mod.Queue(maxsize=4)
         self._tts_results: queue_mod.Queue = queue_mod.Queue(maxsize=2)
@@ -439,7 +444,9 @@ class LiveAvatarSession:
             if self.resident:
                 self._state("render", "generating")
                 with self._idle_lock:
-                    key = base_video_key or self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)]
+                    key = (self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)]
+                           if self._wardrobe_current is not None else
+                           base_video_key or self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)])
                 if isinstance(self.resident, MuseRenderer):
                     self._stream_talking(text, key, narration or {'submitted_ms': queued_ts})
                     return
@@ -624,12 +631,24 @@ class LiveAvatarSession:
 
                 if kind == "seg" and payload is not None:
                     cur_seg = payload
+                    if payload.phase:
+                        self._state('wardrobe_phase', payload.phase)
                     self._subtitle_text = payload.text
                     seg_start_ts = time.perf_counter()
                     try:
                         kind, payload = self._talk_queue.get_nowait()
                     except queue_mod.Empty:
                         kind, payload = None, None
+
+                if kind == "wardrobe_commit":
+                    commit, acknowledged = payload
+                    self._commit_wardrobe(commit)
+                    acknowledged.set()
+                    kind, payload = None, None
+
+                if kind == 'playback_barrier':
+                    payload.set()
+                    kind, payload = None, None
 
                 if kind == "seg_end":
                     # Producer aborted (e.g. TTS/Wav2Lip failure): abandon the
@@ -682,6 +701,8 @@ class LiveAvatarSession:
                             audio = cur_seg.next_slice(half_sec_bytes)
                             if audio:
                                 self.pipe.write_audio(audio)
+                    if cur_seg.phase == 'motion':
+                        self._wardrobe_visual_hold = payload
                     self._write_frame(payload)
                     self._last_tick = time.monotonic()
                     cur_seg.frames_written += 1
@@ -709,7 +730,8 @@ class LiveAvatarSession:
                         self.pipe.write_audio(b"\0" * audio_bytes)
                     elif idle_count % half_sec_frames == 1:
                         self.pipe.write_audio(silence_slice)
-                    self._write_frame(self._idle_frame())
+                    hold = getattr(self,'_wardrobe_visual_hold',None)
+                    self._write_frame(hold if hold is not None else self._idle_frame())
                     self._last_tick = time.monotonic()
 
                 # Probe: actual work (pipe writes + subtitle overlay) and the
@@ -912,16 +934,38 @@ class LiveAvatarSession:
                 "%.1f" % cpu if cpu is not None else "n/a",
             )
 
+        if self._wardrobe_active:
+            time.sleep(0.05)
+            return
+        if self._wardrobe_pending is not None:
+            # Do not preempt speech or consume more jobs while a toggle waits.
+            playback = r.hgetall(f'live_playback:{self.avatar_id}')
+            idle = (not (self._tts_thread and self._tts_thread.is_alive())
+                    and not (self._produce_thread and self._produce_thread.is_alive())
+                    and self._pending.empty() and self._tts_results.empty()
+                    and self._talk_queue.empty() and playback.get('playback') != 'playing')
+            if idle:
+                job = self._wardrobe_pending
+                self._wardrobe_pending = None
+                self._wardrobe_active = True
+                threading.Thread(target=self._play_wardrobe, args=(job,), daemon=True,
+                                 name=f'wardrobe-{self.stream_id}').start()
+                return
+            # Continue draining already prepared speech below, but do not pop more jobs.
+
         # 1) Pull new text when no TTS is in flight and pending has room.
         if (
             self._tts_thread is None or not self._tts_thread.is_alive()
-        ) and not self._pending.full():
+        ) and not self._pending.full() and self._wardrobe_pending is None:
             raw = pop_live_job(r, self.queue_key, self.avatar_id)
             if raw:
                 text, tts_s3_key, base_video_key, queued_ts = parse_live_message(raw)
                 narration = None
                 try:
                     entry = json.loads(raw)
+                    if isinstance(entry, dict) and entry.get('action') == 'wardrobe':
+                        self._wardrobe_pending = entry
+                        return
                     if isinstance(entry, dict) and entry.get('narration') is True:
                         narration = {'job_id': entry.get('job_id') or f'legacy-{time.time_ns()}',
                                      'submitted_ms': entry.get('submitted_ms', 0)}
@@ -955,7 +999,7 @@ class LiveAvatarSession:
                     and self._pending.empty() and self._tts_results.empty()
                     and self._talk_queue.empty()
                     and playback.get('playback') != 'playing')
-            manual_busy = bool(r.llen(self.queue_key) or r.llen(f'live_external_queue:{self.avatar_id}') or
+            manual_busy = bool(self._wardrobe_pending or r.llen(self.queue_key) or r.llen(f'live_external_queue:{self.avatar_id}') or
                               r.llen(f'live_welcome_queue:{self.avatar_id}') or
                               r.llen(f'live_gift_queue:{self.avatar_id}') or
                               r.llen(f'live_like_queue:{self.avatar_id}') or
@@ -963,7 +1007,17 @@ class LiveAvatarSession:
                               not self._pending.empty() or not self._tts_results.empty())
             with self._idle_lock:
                 base_key = self._idle_clip_keys[self._idle_clip_idx % len(self._idle_clip_keys)]
-            item = self._host_director.tick(r, self.resident, base_key, self.work_dir, idle, manual_busy)
+            wardrobe_available = False
+            if self.avatar_id==3 and isinstance(self.resident,MuseRenderer):
+                from ai.wardrobe import host_wardrobe_ready
+                try:
+                    collector=json.loads(r.get(f'live_xhs_config:{self.avatar_id}') or '{}')
+                    manifest=os.environ.get('WARDROBE_MANIFEST',str(Path(__file__).parent.parent/'deploy/wardrobe.json'))
+                    wardrobe_available=host_wardrobe_ready(manifest,self.avatar_id,self.resident,collector)
+                except (ValueError,TypeError):
+                    pass
+            item = self._host_director.tick(r, self.resident, base_key, self.work_dir, idle, manual_busy,
+                                            wardrobe_available=wardrobe_available)
             if item:
                 text, clip = item
                 self._pending.put((text, clip, base_key, time.perf_counter()))
@@ -1166,6 +1220,118 @@ class LiveAvatarSession:
                 logger.exception('CosyVoice/MuseTalk stream failed')
                 put('seg_end', None)
 
+    def _commit_wardrobe(self, commit):
+        """Writer-only: change visuals and speech identity at the same frame boundary."""
+        with self._idle_lock:
+            self.idle_clips = [commit['frames']]
+            self._idle_clip_keys = [commit['key']]
+            self._idle_clip_idx = self._idle_frame_idx = self._idle_elapsed_frames = 0
+            self._fade_remaining = 0
+            self.resident = commit['renderer']
+            self._wardrobe_current = commit['look']
+            self._wardrobe_visual_hold = None
+        self._state('wardrobe', commit['look'])
+
+    def _wardrobe_put(self, kind, value):
+        while self._running:
+            try:
+                self._talk_queue.put((kind,value),timeout=1)
+                return
+            except queue_mod.Full:
+                continue
+        raise RuntimeError('Live session stopped')
+
+    def _queue_wardrobe_clip(self, frames, audio, phase):
+        self._wardrobe_put('seg',_TalkingSegment('',audio,len(frames),phase=phase))
+        for frame in frames:
+            self._wardrobe_put('frame',frame)
+
+    def _queue_wardrobe_show(self, decoded, commit):
+        """FIFO speech/motion; writer commits and displays new idle before outro."""
+        self._talk_is_action = True
+        self._queue_wardrobe_clip(*decoded['intro'],'intro')
+        self._queue_wardrobe_clip(*decoded['motion'],'motion')
+        acknowledged = threading.Event()
+        self._wardrobe_put('wardrobe_commit',(commit,acknowledged))
+        while self._running and not acknowledged.wait(0.1):
+            pass
+        if not self._running:
+            return
+        self._queue_wardrobe_clip(*decoded['outro'],'outro')
+        finished = threading.Event()
+        self._wardrobe_put('playback_barrier',finished)
+        # Keep all other speech blocked until the outro is actually consumed.
+        while self._running and not finished.wait(0.1):
+            pass
+
+    def _play_wardrobe(self, job):
+        """Prepare all phases before speaking; no talk during exit or entrance."""
+        from ai.wardrobe import plan_change, verify_file, validate_transition
+        idle_path = self.work_dir / 'wardrobe-idle.mp4'
+        normalized_idle = self.work_dir / 'wardrobe-idle-normalized.mp4'
+        paths = []
+        try:
+            def current_room():
+                config = json.loads(self._redis.get(f'live_xhs_config:{self.avatar_id}') or '{}')
+                return (config.get('enabled') and config.get('revision') == job.get('xhs_revision')
+                        and time.time()*1000-job.get('ts',0) <= 120000)
+            if not current_room():
+                return
+            if not isinstance(self.resident, MuseRenderer):
+                raise RuntimeError('Wardrobe needs a prepared MuseTalk renderer')
+            manifest = os.environ.get('WARDROBE_MANIFEST',str(Path(__file__).parent.parent/'deploy/wardrobe.json'))
+            plan = plan_change(manifest,self.avatar_id,self._wardrobe_current)
+            renderer = MuseRenderer(plan.renderer_id)
+            renderer.warmup(plan.idle_key)
+            self.storage.download(plan.idle_key,idle_path)
+            verify_file(idle_path,plan.idle_sha256)
+            subprocess.run(['ffmpeg','-v','error','-y','-i',str(idle_path),'-an','-vf',f'fps={self.fps}',
+                            '-c:v','libx264','-preset','fast',str(normalized_idle)],check=True)
+            idle_frames, fps = _read_video_frames(normalized_idle)
+            if (not idle_frames or idle_frames[0].shape != self.base_frames[0].shape
+                    or abs(fps-self.fps)>0.01):
+                raise RuntimeError('New idle must match live dimensions and frame rate')
+            height,width = self.base_frames[0].shape[:2]
+            decoded = {}
+            seconds = 0
+            for clip in plan.clips:
+                path = self.work_dir / f'wardrobe-{clip.phase}.mp4'
+                paths.append(path)
+                self.storage.download(clip.media_key,path)
+                verify_file(path,clip.sha256)
+                speech = clip.phase != 'motion'
+                seconds += validate_transition(path,width,height,self.fps,speech=speech)
+                if seconds > 20:
+                    raise RuntimeError('Whole wardrobe show must be at most 20 seconds')
+                frames, _ = _read_video_frames(path)
+                if not frames or frames[0].shape != self.base_frames[0].shape:
+                    raise RuntimeError('Invalid wardrobe frames')
+                target = round(len(frames)*AUDIO_SAMPLE_RATE/self.fps)*2
+                if speech:
+                    audio = subprocess.check_output(['ffmpeg','-v','error','-i',str(path),'-vn',
+                        '-f','s16le','-ar','16000','-ac','1','pipe:1'])
+                    if not audio:
+                        raise RuntimeError('Missing wardrobe speech')
+                    audio = audio[:target].ljust(target,b'\0')
+                else:
+                    audio = b'\0'*target
+                decoded[clip.phase] = (frames,audio)
+            if not current_room():
+                return
+            if hasattr(self,'_host_director'):
+                self._host_director.close()
+                del self._host_director
+            commit = dict(frames=idle_frames,key=plan.idle_key,renderer=renderer,look=plan.target)
+            with self._muse_play_lock:
+                self._queue_wardrobe_show(decoded,commit)
+        except Exception:
+            self._state('wardrobe','failed')
+            logger.exception('Outfit transition failed; no unprepared appearance is used')
+        finally:
+            for path in [idle_path,normalized_idle,*paths]:
+                path.unlink(missing_ok=True)
+            self._wardrobe_active = False
+
     def _state(self, field, value, **extra):
         try:
             r = getattr(self, "_redis", None)
@@ -1209,10 +1375,12 @@ class LiveAvatarSession:
                 if not self._running:
                     break
             logger.info("resident complete clip queued: %d frames key=%s", len(frames), clip.s3_key)
+            return self._running
         except Exception:
             self._state("render", "failed")
             logger.exception("resident clip preparation failed")
             self._talk_queue.put(("seg_end", None))
+            return False
         finally:
             normalized.unlink(missing_ok=True)
             clip.path.unlink(missing_ok=True)
@@ -1333,6 +1501,10 @@ class LiveAvatarSession:
         """Swap the Watchdog's idle video pool (scene switch). Downloads the
         new videos first, then atomically replaces the in-memory clip list
         under `_idle_lock` so the writer never sees a half-updated pool."""
+        if (self._wardrobe_active or self._wardrobe_pending
+                or (self._wardrobe_current is not None and keys != self._idle_clip_keys)):
+            logger.warning('scene switch ignored: outfit appearance owns the idle pool')
+            return
         if not keys:
             logger.warning("avatar %s switch_scene got an empty video pool", self.avatar_id)
             return

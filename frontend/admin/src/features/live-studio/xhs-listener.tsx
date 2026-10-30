@@ -192,8 +192,11 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
               </Button>
             </div>
             <p className='text-xs text-muted-foreground'>
-              {expires ? `有效至 ${new Date(expires).toLocaleString()}` : '默认密钥长期有效'}
-              ；插件按数字人 ID 绑定采集。停用后需在这里重新启用，管理员登录密码不受影响。
+              {expires
+                ? `有效至 ${new Date(expires).toLocaleString()}`
+                : '默认密钥长期有效'}
+              ；插件按数字人 ID
+              绑定采集。停用后需在这里重新启用，管理员登录密码不受影响。
             </p>
           </div>
         )}
@@ -245,15 +248,19 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
                         ? ` 送出 ${event.text}`
                         : `：${event.text}`}
                   <span className='ml-2 text-xs text-muted-foreground'>
-                    {event.action === 'gift'
-                      ? '已排队礼物感谢'
-                      : event.action === 'like'
-                        ? '已排队点赞感谢'
-                        : event.action === 'welcome'
-                          ? '已排队欢迎'
-                          : event.action === 'reply'
-                            ? '回复生成中'
-                            : '仅展示'}
+                    {event.action === 'wardrobe'
+                      ? '已排队换装'
+                      : event.action === 'wardrobe_unavailable'
+                        ? '换装素材尚未就绪'
+                        : event.action === 'gift'
+                          ? '已排队礼物感谢'
+                          : event.action === 'like'
+                            ? '已排队点赞感谢'
+                            : event.action === 'welcome'
+                              ? '已排队欢迎'
+                              : event.action === 'reply'
+                                ? '回复生成中'
+                                : '仅展示'}
                   </span>
                 </li>
               ))}

@@ -33,6 +33,9 @@ class HostDirector:
         self.library = {}
         self.library_order = deque()
         self.library_base = None
+        self.next_wardrobe_hint = 0
+        self.last_hint_completed = 0
+        self.hint_cursor = 0
 
     @staticmethod
     def discard(clip):
@@ -46,7 +49,7 @@ class HostDirector:
             r.set(self.status_key, json.dumps(status, ensure_ascii=False))
             self.last_status = status
 
-    def tick(self, r, renderer, base_key, work_dir, pipeline_idle, manual_busy):
+    def tick(self, r, renderer, base_key, work_dir, pipeline_idle, manual_busy, wardrobe_available=False):
         if self.closed:
             return None
         raw = r.get(self.key)
@@ -62,6 +65,9 @@ class HostDirector:
             self.due = 0
             self.error = ''
             self.last_status = None
+            self.next_wardrobe_hint = time.monotonic()+240
+            self.last_hint_completed = self.completed
+            self.hint_cursor = 0
         elif config.get('command') != self.config.get('command'):
             self.error = ''  # Explicit resume retries a failed preparation.
         self.config = config
@@ -126,17 +132,30 @@ class HostDirector:
             self.future = (config['run_id'], index, self.executor.submit(prepare))
 
         if library and len(self.library) == len(scripts) and not self.active and pipeline_idle and not manual_busy and time.monotonic() >= self.due:
-            if not self.library_order:
-                welcome_count = config.get('welcome_count', len(scripts)//2)
-                welcomes = list(range(welcome_count))
-                others = list(range(welcome_count, len(scripts)))
-                random.shuffle(welcomes)
-                random.shuffle(others)
-                for first, second in zip(welcomes, others):
-                    self.library_order.extend([first, second])
-                self.library_order.extend(welcomes[len(others):])
-                self.library_order.extend(others[len(welcomes):])
-            index = self.library_order.popleft()
+            hints={i for i in config.get('wardrobe_hint_indices',[]) if type(i) is int and 0<=i<len(scripts)}
+            due_hint=(config.get('wardrobe_enabled') and wardrobe_available and hints
+                      and self.completed-self.last_hint_completed>=3 and time.monotonic()>=self.next_wardrobe_hint)
+            if due_hint:
+                ordered=sorted(hints)
+                index=ordered[self.hint_cursor%len(ordered)]
+                self.hint_cursor+=1
+                self.next_wardrobe_hint=time.monotonic()+240
+                self.last_hint_completed=self.completed+1
+            else:
+                if not self.library_order:
+                    welcome_count = config.get('welcome_count', len(scripts)//2)
+                    welcomes = [i for i in range(welcome_count) if i not in hints]
+                    others = [i for i in range(welcome_count,len(scripts)) if i not in hints]
+                    random.shuffle(welcomes)
+                    random.shuffle(others)
+                    for first, second in zip(welcomes, others):
+                        self.library_order.extend([first, second])
+                    self.library_order.extend(welcomes[len(others):])
+                    self.library_order.extend(others[len(welcomes):])
+                if not self.library_order:
+                    self.report(r,'waiting')
+                    return None
+                index = self.library_order.popleft()
             text, source = self.library[index]
             clip = copy.deepcopy(source)
             clip.path = source.path.with_name('host-play-'+uuid.uuid4().hex+source.path.suffix)

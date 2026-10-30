@@ -1,0 +1,15 @@
+[Unit]
+Description=LingCast isolated wardrobe renderer (loopback only)
+After=network-online.target
+[Service]
+EnvironmentFile=/data1/taoxin/LingCast/worker/.env.local
+Environment=MUSETALK_ROOT=/data1/taoxin/lingcast-wardrobe-local-test/20261030
+Environment=MUSETALK_GPU=2
+Environment=MUSETALK_PORT=59497
+WorkingDirectory=/data1/taoxin/LingCast/worker
+ExecStart=/data1/taoxin/lingcast-musetalk-bench/.venv/bin/python -u /data1/taoxin/LingCast/worker/musetalk_service.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+[Install]
+WantedBy=default.target

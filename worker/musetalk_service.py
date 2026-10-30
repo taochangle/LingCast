@@ -52,6 +52,22 @@ def load():
         failure = type(error).__name__
         logging.exception('MuseTalk startup failed')
 
+def refresh_prepared_looks():
+    from ai.prepared_looks import prepared_looks
+    if model is None or not busy.acquire(False):return
+    try:
+        for key, look in prepared_looks(ROOT/'prepared-looks.json').items():
+            if AVATARS.get(key)==look:continue
+            if key in AVATARS:
+                raise ValueError('Prepared appearance IDs are immutable; do not replace a live profile')
+            model.register_prepared(look['profile'],look['input_sha256'])
+            AVATARS[key]=look
+    except Exception:
+        logging.exception('New appearance refused; existing profiles retained')
+    finally:
+        busy.release()
+
+
 def windows(text, stop):
     """Keep TTS generating the next audio window while MuseTalk renders this one."""
     output = queue.Queue(maxsize=2)
@@ -117,6 +133,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/readyz':
+            refresh_prepared_looks()
             return self.json({'ready': model is not None, 'error': failure, 'avatars': AVATARS, 'engine': 'cosyvoice-musetalk'})
         self.json({'error': 'not found'}, 404)
 
@@ -125,6 +142,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({'error': 'not found'}, 404)
         if self.headers.get('Origin') or not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer '+TOKEN):
             return self.json({'error': 'unauthorized'}, 401)
+        refresh_prepared_looks()
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 8192:
@@ -213,6 +231,6 @@ class Handler(BaseHTTPRequestHandler):
                 busy.release()
 
 if __name__ == '__main__':
-    server = ThreadingHTTPServer(('127.0.0.1', 59496), Handler)
+    server = ThreadingHTTPServer(('127.0.0.1', int(os.environ.get('MUSETALK_PORT', '59496'))), Handler)
     threading.Thread(target=load, daemon=True).start()
     server.serve_forever()

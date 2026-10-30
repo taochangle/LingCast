@@ -14,14 +14,16 @@ import (
 )
 
 type hostConfig struct {
-	Kind         string   `json:"kind,omitempty"`
-	WelcomeCount int      `json:"welcome_count,omitempty"`
-	RunID        string   `json:"run_id"`
-	Command      string   `json:"command"`
-	Mode         string   `json:"mode"`
-	Scripts      []string `json:"scripts"`
-	MinPause     int      `json:"min_pause"`
-	MaxPause     int      `json:"max_pause"`
+	WardrobeEnabled     bool     `json:"wardrobe_enabled,omitempty"`
+	WardrobeHintIndices []int    `json:"wardrobe_hint_indices,omitempty"`
+	Kind                string   `json:"kind,omitempty"`
+	WelcomeCount        int      `json:"welcome_count,omitempty"`
+	RunID               string   `json:"run_id"`
+	Command             string   `json:"command"`
+	Mode                string   `json:"mode"`
+	Scripts             []string `json:"scripts"`
+	MinPause            int      `json:"min_pause"`
+	MaxPause            int      `json:"max_pause"`
 }
 
 func validateHostScripts(scripts []string) error {
@@ -100,7 +102,8 @@ func (h *LiveHandler) Host(c *gin.Context) {
 		if json.Unmarshal([]byte(state), &status) != nil || status["run_id"] != config.RunID {
 			status = nil
 		}
-		c.JSON(200, gin.H{"config": config, "status": status, "library": hostLibrary(avatar.Name)})
+		library, _ := hostLibraryForAvatar(avatar.Name, id)
+		c.JSON(200, gin.H{"config": config, "status": status, "library": library})
 		return
 	}
 	var req struct {
@@ -121,7 +124,7 @@ func (h *LiveHandler) Host(c *gin.Context) {
 			return
 		}
 		if req.Action == "start_library" {
-			req.Scripts = hostLibrary(avatar.Name)
+			req.Scripts, _ = hostLibraryForAvatar(avatar.Name, id)
 			req.MinPause, req.MaxPause = 2, 4
 		} else if err := validateHostScripts(req.Scripts); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
@@ -138,6 +141,7 @@ func (h *LiveHandler) Host(c *gin.Context) {
 		if req.Action == "start_library" {
 			config.Kind = "library"
 			config.WelcomeCount = 12
+			_, config.WardrobeHintIndices = hostLibraryForAvatar(avatar.Name, id)
 		}
 	case "pause", "resume", "stop":
 		if config.RunID == "" {
@@ -149,6 +153,7 @@ func (h *LiveHandler) Host(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "主持操作无效"})
 		return
 	}
+	config.WardrobeEnabled = wardrobeHostEnabled(id)
 	config.Command = fmt.Sprint(time.Now().UnixNano())
 	value, _ := json.Marshal(config)
 	if h.q.WriteValue(c.Request.Context(), key, string(value)) != nil {

@@ -21,7 +21,7 @@ class StreamingSpeech:
 class MuseRenderer:
     def __init__(self, avatar_id):
         self.avatar_id = int(avatar_id)
-        self.url = os.environ['MUSETALK_RESIDENT_URL'].rstrip('/')
+        self.url = os.environ.get('MUSETALK_WARDROBE_URL', os.environ['MUSETALK_RESIDENT_URL']).rstrip('/') if self.avatar_id in (3001, 3002, 3003) else os.environ['MUSETALK_RESIDENT_URL'].rstrip('/')
         self.token = os.environ['RESIDENT_API_TOKEN']
 
     def warmup(self, base_key):
@@ -30,6 +30,17 @@ class MuseRenderer:
         data = response.json()
         if not data.get('ready') or data.get('avatars', {}).get(str(self.avatar_id), {}).get('base_key') != base_key:
             raise RuntimeError('MuseTalk avatar/material is not prepared; refusing mismatched face')
+        self.prepared_avatars = data.get('avatars', {})
+        wardrobe_url = os.environ.get('MUSETALK_WARDROBE_URL')
+        if self.avatar_id == 3 and wardrobe_url:
+            try:
+                response = requests.get(wardrobe_url.rstrip('/')+'/readyz', timeout=(5, 10))
+                response.raise_for_status()
+                appearance = response.json()
+                if appearance.get('ready'):
+                    self.prepared_avatars.update({key: value for key, value in appearance.get('avatars', {}).items() if key in ('3001', '3002', '3003')})
+            except requests.RequestException:
+                logger.warning('Wardrobe renderer unavailable; original appearance remains usable')
 
     def events(self, text, base_key):
         response = None

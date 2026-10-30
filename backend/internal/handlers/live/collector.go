@@ -345,6 +345,8 @@ func (h *LiveHandler) CollectorEvents(c *gin.Context) {
 							action = "welcome"
 						}
 					}
+				} else if requestedWardrobe(e.Text) {
+					action = h.queueWardrobe(ctx, avatar.ID, req.Revision)
 				} else {
 					action = "reply"
 					h.db.Create(&models.LiveMessage{AvatarID: avatar.ID, Username: e.Nickname, Role: "user", Content: e.Text})

@@ -1,0 +1,83 @@
+{
+  "enabled": false,
+  "avatar_id": 3,
+  "initial": "white",
+  "order": [
+    "white",
+    "burgundy",
+    "champagne"
+  ],
+  "looks": {
+    "white": {
+      "renderer_id": 3,
+      "idle_key": "scene_videos/20261028_780414dd7bc78671_idle-loop.mp4",
+      "idle_sha256": ""
+    },
+    "burgundy": {
+      "renderer_id": 3002,
+      "idle_key": "",
+      "idle_sha256": ""
+    },
+    "champagne": {
+      "renderer_id": 3003,
+      "idle_key": "",
+      "idle_sha256": ""
+    }
+  },
+  "transitions": {
+    "white:burgundy": {
+      "intro": {
+        "media_key": "",
+        "sha256": "",
+        "renderer_id": 3,
+        "base_key": "scene_videos/20261028_780414dd7bc78671_idle-loop.mp4"
+      },
+      "motion": {
+        "media_key": "",
+        "sha256": ""
+      },
+      "outro": {
+        "media_key": "",
+        "sha256": "",
+        "renderer_id": 3002,
+        "base_key": ""
+      }
+    },
+    "burgundy:champagne": {
+      "intro": {
+        "media_key": "",
+        "sha256": "",
+        "renderer_id": 3002,
+        "base_key": ""
+      },
+      "motion": {
+        "media_key": "",
+        "sha256": ""
+      },
+      "outro": {
+        "media_key": "",
+        "sha256": "",
+        "renderer_id": 3003,
+        "base_key": ""
+      }
+    },
+    "champagne:white": {
+      "intro": {
+        "media_key": "",
+        "sha256": "",
+        "renderer_id": 3003,
+        "base_key": ""
+      },
+      "motion": {
+        "media_key": "",
+        "sha256": ""
+      },
+      "outro": {
+        "media_key": "",
+        "sha256": "",
+        "renderer_id": 3,
+        "base_key": "scene_videos/20261028_780414dd7bc78671_idle-loop.mp4"
+      }
+    }
+  }
+}

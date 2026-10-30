@@ -185,4 +185,30 @@ class HostDirectorTests(unittest.TestCase):
         self.assertEqual(json.loads(self.objects['live_host_status:1'])['phase'], 'failed')
 
 
+
+class WardrobeHintTests(unittest.TestCase):
+    setUp = HostDirectorTests.setUp
+    save = HostDirectorTests.save
+    def test_hints_are_rate_limited_and_never_selected_as_normal_paragraphs(self):
+        self.config.update(kind='library',welcome_count=1,wardrobe_enabled=True,wardrobe_hint_indices=[2],
+                           scripts=['欢迎朋友。','聊聊今天。','想看换装可以发换衣服。'])
+        self.save()
+        def tick(available=True,manual=False):
+            return self.director.tick(self.redis,self.renderer,'base',self.temp.name,True,manual,wardrobe_available=available)
+        for _ in range(3):self.assertIsNone(tick())
+        # Let the time gate pass; three ordinary paragraphs are still required.
+        self.director.next_wardrobe_hint=0
+        first=[tick()[0] for _ in range(3)]
+        self.assertNotIn(self.config['scripts'][2],first)
+        self.assertIsNone(tick(manual=True))
+        hint=tick();self.assertEqual(hint[0],self.config['scripts'][2])
+        later=[tick()[0] for _ in range(6)]
+        self.assertNotIn(self.config['scripts'][2],later)
+        self.director.next_wardrobe_hint=0
+        unavailable=[tick(available=False)[0] for _ in range(4)]
+        self.assertNotIn(self.config['scripts'][2],unavailable)
+        self.assertEqual(tick()[0],self.config['scripts'][2])
+        self.config.update(mode='paused',command='pause');self.save()
+        self.assertIsNone(tick())
+
 if __name__=='__main__': unittest.main()
