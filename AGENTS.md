@@ -366,10 +366,6 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 
 - **默认采集密钥（插件0.1.4）**：用户指定前后台默认REDACTED_COLLECTOR_KEY、长期有效，插件数字人ID默认3，通过X-LingCast-Avatar-ID绑定。Redis停用标记可撤销默认密钥，后台重新启用；保留旧随机密钥兼容。与管理员登录密码无关。详情docs/chrome-collector.md。
 
-- **ID3换装（本地未上线）**：精确「换衣服/换一套衣服」触发按order多造型轮换（本地新配置白衣→酒红→香槟；v1浅蓝保留）。API LIVE_WARDROBE_ENABLED和deploy/wardrobe.json双默认关闭；严格intro口播→无音轨motion离场/空镜/入场→writer切新idle/renderer并显示新idle→outro口播；末尾播放屏障前不放行其他回复。每方向三段文件，拒绝旧整段MP4清单。3001/3002/3003分别为若棠浅蓝/酒红/香槟内部口型别名，未准备好不播放、不退回白衣讲话。素材由「制作 GitHub Trending 周榜视频」会话交付本地测试版（服装动态有限制），已生成含真实口型/音色的双向Watchdog录制预览，127.0.0.1:59508仅本地；未接生产或3001线上注册。现有线上模型尚无本轮热加载代码，禁止假定改JSON即可生效或自行重启；先独立测试。详见docs/wardrobe.md。
-
-- **主持换装提醒（本地未上线）**：ID3主持话术库在换装开关启用时加入3条固定提示，独立索引、4分钟限频、至少隔3段普通主持。仅采集/回复开启且完整manifest与口型ready快照匹配时播放；不自动换衣，不插入用户有限讲稿，保持手动/互动优先。当前线上未改、模型未重启。
-
-- **最新本地换装联调**：59509已更新版本20261030-130322，香槟缺项已解决，三方向+主持提醒联动共4条成片通过Session文件适配器/Watchdog检查，26项Python测试通过。root runtime/wardrobe-style-v2-preview/recordings.json指向版本化文件；旧文件保留。仅本地，生产开关仍关、模型未重启，未注册生产3002/3003。技术检查不等于人工听审或正式画质验收。
-
-- **换装无重启发布路径**：原MuseTalk59496进程不具备本轮形象注册功能；新建loopback59497独立wardrobe renderer，3002/3003专用，原白衣和知夏仍走59496，保留缓存。新增模型副本不等于重启原模型，执行前检查GPU余量；仅定向API/前端/stream Worker发布，不跑全量chengdu.sh。部署清单放runtime，仓库示例保持关闭。见docs/wardrobe.md。
+- **ID3换装**：精确「换衣服/换一套衣服」触发白衣→酒红→香槟轮换。当前讲话结束后，严格intro完整口播→静音离场/空镜/入场→writer提交新idle/renderer并先显示idle→outro口播→释放互动队列。每方向三个文件，失败不使用未准备造型，重新开播恢复白衣。见docs/wardrobe.md。
+- **主持换装提醒**：ID3主持话术库三条固定提示，4分钟限频且至少隔3段普通主持；插件采集/回复、完整manifest和全部口型ready才提醒，不自动换装。旧任务需重新启动话术库。
+- **发布边界**：新造型3002/3003使用loopback59497独立wardrobe服务，原白衣/知夏仍走59496并保留缓存。原CosyVoice、MuseTalk、IndexTTS、LatentSync不得为此重启；只定向API/前端/stream Worker，不跑全量chengdu.sh。runtime/wardrobe.json为实际清单，仓库示例仍默认关闭；59509是本地预览，实际验证证据另见runtime/wardrobe-verification。
