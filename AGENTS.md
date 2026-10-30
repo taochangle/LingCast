@@ -114,7 +114,7 @@
 - ✅ Go API：`POST /api/avatars`、`GET /api/avatars`、`POST /api/tasks`、
   `GET /api/tasks/:id`、`POST /api/tasks/:id/status`（Worker 回调）。
 - ✅ 管理员登录：`POST /api/admin/login` 校验 `ADMIN_USERNAME`/`ADMIN_PASSWORD`
-  （默认 admin/admin123，务必修改），Redis 存 24h 会话 + HttpOnly cookie
+  （通过私有环境变量配置，生产须使用独立强密码），Redis 存 24h 会话 + HttpOnly cookie
   `admin_token`；`GET /api/admin/me` 校验、`POST /api/admin/logout` 退出。前端
   `/login` 登录页 + `_authenticated` 路由 `beforeLoad` 守卫；管理端写操作与
   `/api/users` 走 `RequireAdmin()` 中间件，观众端接口与 Worker Webhook 保持公开。
