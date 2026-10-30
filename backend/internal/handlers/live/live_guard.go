@@ -81,7 +81,7 @@ func blockedLiveSpeech(text string) bool {
 		return true
 	}
 	normalized := guardText(text)
-	for _, word := range []string{"qwen", "cosyvoice", "musetalk", "latentsync", "indextts", "index-tts", "ffmpeg", "127.0.0.1", "127.0.0.1", "localhost", "rtmp://", "sk-", "lc_", "傻逼", "操你", "去死"} {
+	for _, word := range []string{"qwen", "cosyvoice", "musetalk", "latentsync", "indextts", "index-tts", "ffmpeg", "127.0.0.1", "localhost", "rtmp://", "sk-", "lc_", "傻逼", "操你", "去死"} {
 		if strings.Contains(normalized, word) {
 			return true
 		}

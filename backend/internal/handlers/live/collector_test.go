@@ -74,7 +74,7 @@ func TestCollectorIntegration(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
-			if token == defaultCollectorKey {
+			if strings.HasPrefix(token, "lc_") {
 				req.Header.Set("X-LingCast-Avatar-ID", fmt.Sprint(avatar.ID))
 			}
 		}
@@ -87,16 +87,13 @@ func TestCollectorIntegration(t *testing.T) {
 	if code, _ := request("POST", "/session", "", nil); code != 401 {
 		t.Fatal(code)
 	}
-	if code, _ := request("POST", "/session", defaultCollectorKey, map[string]any{"action": "start", "url": "https://www.xiaohongshu.com/livestream/123"}); code != 200 {
-		t.Fatal("default requires manual pairing", code)
-	}
 	code, pair := request("POST", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
 	if code != 200 {
 		t.Fatal(code, pair)
 	}
 	token := pair["token"].(string)
-	if token != defaultCollectorKey || pair["expires_ms"] != float64(0) {
-		t.Fatal("wrong default key or expiry")
+	if !strings.HasPrefix(token, fmt.Sprintf("lc_%d_", avatar.ID)) || pair["expires_ms"] != float64(0) {
+		t.Fatal("wrong random key or expiry")
 	}
 	digest, _ := q.ReadValue(t.Context(), collectorTokenKey(uint64(avatar.ID)))
 	if digest == token || digest != tokenDigest(token) {
@@ -224,9 +221,15 @@ func TestCollectorIntegration(t *testing.T) {
 	if n != 0 {
 		t.Fatal("revoke kept queued welcome")
 	}
-	request("POST", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
-	if code, _ := request("POST", "/session", defaultCollectorKey, map[string]any{"action": "start", "url": data["url"]}); code != 200 {
-		t.Fatal("default re-enable failed", code)
+	_, renewed := request("POST", fmt.Sprintf("/pair/%d", avatar.ID), "", nil)
+	if renewed["token"] == token {
+		t.Fatal("rotation reused old key")
+	}
+	if code, _ := request("POST", "/session", token, map[string]any{"action": "start", "url": data["url"]}); code != 401 {
+		t.Fatal("old key accepted after rotation", code)
+	}
+	if code, _ := request("POST", "/session", renewed["token"].(string), map[string]any{"action": "start", "url": data["url"]}); code != 200 {
+		t.Fatal("new key failed", code)
 	}
 }
 

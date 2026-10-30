@@ -16,8 +16,8 @@ services:
     networks: [default, qwen]
     environment:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
-      S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
-      CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
+      S3_PUBLIC_BASE_URL: ${LINGCAST_PUBLIC_ORIGIN:?Set LINGCAST_PUBLIC_ORIGIN in private .env}/media
+      CORS_ORIGINS: ${LINGCAST_PUBLIC_ORIGIN:?Set LINGCAST_PUBLIC_ORIGIN in private .env},http://localhost:59480,http://127.0.0.1:59480
       LIPSYNC_ENGINE: musetalk
   api-live:
     build:
@@ -27,8 +27,8 @@ services:
     networks: [default, qwen]
     environment:
       V2_QWEN_BASE_URL: http://vllm:8000/v1
-      S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
-      CORS_ORIGINS: http://127.0.0.1:59480,http://localhost:59480,http://127.0.0.1:59480
+      S3_PUBLIC_BASE_URL: ${LINGCAST_PUBLIC_ORIGIN:?Set LINGCAST_PUBLIC_ORIGIN in private .env}/media
+      CORS_ORIGINS: ${LINGCAST_PUBLIC_ORIGIN:?Set LINGCAST_PUBLIC_ORIGIN in private .env},http://localhost:59480,http://127.0.0.1:59480
       LIPSYNC_ENGINE: musetalk
   api-scheduler:
     build:
@@ -36,7 +36,7 @@ services:
         GOPROXY: https://goproxy.cn,direct
         APK_MIRROR: mirrors.aliyun.com
     environment:
-      S3_PUBLIC_BASE_URL: http://127.0.0.1:59480/media
+      S3_PUBLIC_BASE_URL: ${LINGCAST_PUBLIC_ORIGIN:?Set LINGCAST_PUBLIC_ORIGIN in private .env}/media
 networks:
   qwen:
     external: true

@@ -1,4 +1,4 @@
-import {SERVER_ORIGIN, DEFAULT_COLLECTOR_KEY, roomURL, normalizeEvents} from './protocol.js';
+import {SERVER_ORIGIN, roomURL, normalizeEvents} from './protocol.js';
 const init=Promise.all([
  chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),
  chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})
@@ -53,7 +53,7 @@ async function handle(message,sender) {
  if(message.type==='LC_START') {
    if(busy) throw new Error('正在上报，请稍后重试');
    const server=SERVER_ORIGIN;
-   if(message.token!==DEFAULT_COLLECTOR_KEY && !/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
+   if(!/^lc_\d+_[a-f0-9]{64}$/.test(message.token)) throw new Error('请填写后台生成的采集密钥');
    const avatarId=Number(message.avatarId || 3);
    if(!Number.isSafeInteger(avatarId) || avatarId<1 || avatarId>4294967295) throw new Error('数字人 ID 无效');
    const tab=await chrome.tabs.get(message.tabId);const room=roomURL(tab.url);

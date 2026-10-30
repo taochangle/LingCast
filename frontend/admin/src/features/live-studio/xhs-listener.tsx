@@ -48,7 +48,7 @@ function message(error: unknown) {
 }
 export function XHSListener({ avatarId }: { avatarId: number }) {
   const [data, setData] = useState<Result | null>(null)
-  const [token, setToken] = useState('REDACTED_COLLECTOR_KEY')
+  const [token, setToken] = useState('')
   const [checkedAt, setCheckedAt] = useState(0)
   const [expires, setExpires] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -88,7 +88,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
         )
         setToken(data.token)
         setExpires(data.expires_ms)
-        toast.success('默认采集密钥已启用')
+        toast.success('新采集密钥已生成，旧密钥已失效')
       } else if (action === 'revoke') {
         await api.delete(`/live/${avatarId}/collector-token`)
         setToken('')
@@ -138,7 +138,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             下载并解压插件，在 chrome://extensions
             开启开发者模式，选择「加载已解压的扩展程序」。
           </li>
-          <li>服务器和密钥已默认填写，插件数字人 ID 请设为 {avatarId}。</li>
+          <li>服务器已在本地打包时固定，密钥请在下方生成并填写，插件数字人 ID 请设为 {avatarId}。</li>
           <li>
             手动打开自己的小红书直播页，点击插件「在当前直播页开始」。默认只采集；确认信息后再开启自动欢迎或回复。
           </li>
@@ -150,7 +150,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             </a>
           </Button>
           <Button disabled={busy} onClick={() => void act('pair')}>
-            启用默认采集密钥
+            生成新采集密钥
           </Button>
           <Button
             variant='outline'
@@ -172,7 +172,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
           <Input
             id='collector-server'
             readOnly
-            value='http://127.0.0.1:59480'
+            value={window.location.origin}
             onFocus={(event) => event.target.select()}
           />
         </div>
@@ -194,7 +194,7 @@ export function XHSListener({ avatarId }: { avatarId: number }) {
             <p className='text-xs text-muted-foreground'>
               {expires
                 ? `有效至 ${new Date(expires).toLocaleString()}`
-                : '默认密钥长期有效'}
+                : '采集密钥生成后保存在插件中'}
               ；插件按数字人 ID
               绑定采集。停用后需在这里重新启用，管理员登录密码不受影响。
             </p>

@@ -8,7 +8,7 @@
 
 当前直播链路为 Qwen SSE → CosyVoice音频流 → MuseTalk逐帧 → FFmpeg/SRS；手动口播按原文生成。优先级为手动口播 → 评论回复 → 欢迎 → 自主主持，评论和欢迎分别排队。常驻配置、素材映射、缓存与回滚见 [流式直播链路](cosyvoice-musetalk-live.md)。IndexTTS/LatentSync 保留作旧模式和回滚使用。
 
-当前直播系统运行于 `chengdu-taoxin`（127.0.0.1），目录 `/data1/taoxin/LingCast`，后台 `http://127.0.0.1:59480`。本机原实例已停止，数据卷和源码保留；恢复本机前先停远程 Worker，避免两套同时处理/推流。
+真实公网origin仅保存在服务器私有 `.env` 的 `LINGCAST_PUBLIC_ORIGIN`，不写入仓库。宿主机本地调试可访问 `http://127.0.0.1:59480`。本机原实例已停止，数据卷和源码保留；恢复本机前先停远程 Worker，避免两套同时处理/推流。
 
 ## 网络
 
@@ -47,3 +47,7 @@ CosyVoice和MuseTalk使用各自独立模型环境，原生Worker使用 `residen
 回退本机：先在远程停止 lingcast-stream，并停止对外推流；再从原本的本机项目目录启动 Docker 基础服务、API 和管理端，恢复 resident.env 的旧 S3 端点并重建 SSH 转发，最后运行本地 Worker。本地原数据卷没有删除；若回退到迁移快照，可用 SQL、S3 对象和 Redis 记录备份恢复。切勿同时恢复两侧 Worker。
 
 历史 IndexTTS/LatentSync 短句验证（不代表当前流式模式）：迁移后「大家好，欢迎来到直播间。」提交至第一帧说话约 18.54 秒，生成约 17.81 秒，22.55 秒时播放完并返回待机。此为特定短句单次测量，不代表所有输入的延迟，也不是严格迁移前后性能对照。
+
+## 部署信息与插件打包
+
+私有.env必须设置LINGCAST_PUBLIC_ORIGIN（HTTP(S) origin，不带路径）。Compose由此设置S3公开链接及CORS；前端显示window.location.origin，不编译真实地址。插件以`LINGCAST_PUBLIC_ORIGIN=<私有值> python3 extensions/package_chrome.py`打包，ZIP不进Git，也不含任何密钥。采集改为后台生成每数字人随机Bearer，旧共享口令已废弃。不要把私有.env、数据库、真实采集数据、构建ZIP或历史备份bundle提交到Git。

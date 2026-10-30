@@ -1,11 +1,11 @@
-import {SERVER_ORIGIN,DEFAULT_COLLECTOR_KEY} from './protocol.js';
+import {SERVER_ORIGIN} from './protocol.js';
 const $=id=>document.getElementById(id);
 const send=async message=>{const result=await chrome.runtime.sendMessage(message);if(!result?.ok) throw new Error(result?.error || '插件连接失败');return result;};
 let initialized=false;
 async function refresh() {
  try {
   const {prefs,status}=await send({type:'LC_STATUS'});
-  if(!initialized) {$('server').value=SERVER_ORIGIN;$('avatar').value=prefs.avatarId || Number(prefs.token?.match(/^lc_(\d+)_/)?.[1] || 3);$('token').value=prefs.token && !prefs.token.startsWith('lc_') ? prefs.token : DEFAULT_COLLECTOR_KEY;for(const id of ['welcome','reply','thanks']) $(id).checked=!!prefs[id];initialized=true;}
+  if(!initialized) {$('server').value=SERVER_ORIGIN;$('avatar').value=prefs.avatarId || Number(prefs.token?.match(/^lc_(\d+)_/)?.[1] || 3);$('token').value=/^lc_\d+_[a-f0-9]{64}$/.test(prefs.token || '') ? prefs.token : '';for(const id of ['welcome','reply','thanks']) $(id).checked=!!prefs[id];initialized=true;}
   $('status').textContent=status ? `${status.message || (status.active?'正在采集':'已停止')} · 已接收 ${status.received || 0} 条${status.room?'\n'+status.room:''}` : '尚未开始';
   $('stop').disabled=!status?.active;
  } catch(error) {$('error').textContent=error.message;}

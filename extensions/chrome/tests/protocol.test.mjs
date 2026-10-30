@@ -25,7 +25,7 @@ test('manifest limits reading to user action, no cookie/network interception per
  assert.equal(manifest.externally_connectable,undefined);
  assert.deepEqual(manifest.optional_host_permissions,['http://127.0.0.1/*']);
  const popup=fs.readFileSync(new URL('../popup.html',import.meta.url),'utf8');
- assert.match(popup, /id="server"[^>]*readonly[^>]*value="http:\/\/112\.19\.174\.43:59480"/);
+ assert.match(popup, /id="server"[^>]*readonly[^>]*value="http:\/\/127\.0\.0\.1:59480"/);
 });
 
 test('dynamic share paths identify the same room without forwarding share tokens',()=>{

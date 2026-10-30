@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LingCast 直播互动采集",
   "description": "手动采集当前小红书直播页的新聊天与进场提示，上报至固定 LingCast 服务器。",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage", "alarms"],
   "optional_host_permissions": ["http://127.0.0.1/*"],

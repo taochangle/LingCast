@@ -6,13 +6,13 @@
 
 ## 协议和边界
 
-- 管理员 POST/DELETE `/api/live/:avatarID/collector-token`，启用/停用默认采集密钥 `REDACTED_COLLECTOR_KEY`，长期有效。插件与后台默认填写，无需复制；`X-LingCast-Avatar-ID` 明确选择数字人，未传时默认3，仍校验数字人存在。停用状态写入Redis，停用后默认密钥也拒绝认证；后台重新启用会停止旧会话并清空待播队列。旧版随机Bearer密钥按原有效期兼容，插件迁移为默认密钥。管理员登录认证不变。
+- 管理员POST `/api/live/:avatarID/collector-token`生成每个数字人独立的32字节随机Bearer密钥，只在生成响应中返回原文，Redis只保存哈希；重新生成使旧密钥失效。DELETE撤销。插件不包含任何默认口令；密钥手动填写一次并保存在插件本地，不给content script，不进入下载包。
 - 插件 Bearer POST `/api/collector/session`，action=start/stop；start 传正式房间 URL、welcome/reply 开关（插件默认均为 false），返回 revision、server_ms、规范化房间 URL。换房间必须新建会话，刷新/关闭页面后需手动重新开始。
 - 插件 Bearer POST `/api/collector/events`，最多 20 条/32KiB，每 400ms 至多一批。数据为 id/kind/nickname/text/observed_ms，不含 Cookie、输入框、HTML、分享 token 或其他页面内容。后台从密钥决定 avatarId，不信任客户端指定的数字人。
 - 支持 enter/message/like/gift，事件过期 30 秒丢弃；客户端握手计算时钟偏差。服务端去重 id 与内容签名、流式模式欢迎和回复各最多2秒触发一次（旧版模式仍为60秒/12秒），评论与欢迎独立限量排队，欢迎排满不会阻止评论触发回复。关播时只展示，不生成口播。旧房间回复会通过现有 xhs_revision 校验失效。
 - 自动欢迎走 CosyVoice/MuseTalk 音视频流；回复走 Qwen SSE分句 + 外部口播队列，优先级：手动口播 > 礼物感谢 > 点赞感谢 > 评论回复 > 欢迎 > 自主主持。插件只解决采集，不减少模型计算时间。
 - CORS 只对 `/api/collector/` 接受格式正确的 chrome-extension origin，其余管理员接口继续只接受既有后台 origin。所有实际采集请求都必须带有效的限定密钥。
-- 插件服务器固定为 http://127.0.0.1:59480 且不可编辑；optional_host_permissions 只声明该主机，不申请所有网页访问；activeTab 只在手动点击时授权当前直播页。密钥存储限制为 TRUSTED_CONTEXTS，不下发 content script，消息来源校验绑定 tab/frame/room/revision。关闭弹窗不会停止采集，关闭 Chrome 会停止。
+- 插件服务器由本地打包时注入且不可编辑；optional_host_permissions 只声明打包时指定的主机，不申请所有网页访问；activeTab 只在手动点击时授权当前直播页。密钥存储限制为 TRUSTED_CONTEXTS，不下发 content script，消息来源校验绑定 tab/frame/room/revision。关闭弹窗不会停止采集，关闭 Chrome 会停止。
 
 ## 验证与限制
 

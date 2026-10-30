@@ -11,7 +11,7 @@ def main():
     if sys.platform != 'darwin':raise SystemExit('This installer requires macOS')
     parser=argparse.ArgumentParser()
     parser.add_argument('--ssh-host',default='chengdu-taoxin')
-    parser.add_argument('--api',default='http://127.0.0.1:59480')
+    parser.add_argument('--api',default=os.environ.get('LINGCAST_PUBLIC_ORIGIN','http://127.0.0.1:59480'))
     parser.add_argument('--local-redis-port',type=int,default=59489)
     args=parser.parse_args()
     root=Path(__file__).resolve().parent.parent

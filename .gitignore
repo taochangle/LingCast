@@ -52,3 +52,5 @@ zvec_data/
 /deployment-systemd/
 /Dockerfile.api
 /Dockerfile.admin
+# Generated extension packages can contain private deployment origins.
+/frontend/admin/public/downloads/*.zip

@@ -2,8 +2,10 @@ package live
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,8 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"talkingavatar/backend/internal/models"
 )
-
-const defaultCollectorKey = "REDACTED_COLLECTOR_KEY"
 
 func collectorDisabledKey(id uint64) string { return fmt.Sprintf("live_collector_disabled:%d", id) }
 
@@ -61,7 +61,12 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 		c.JSON(200, gin.H{"revoked": true})
 		return
 	}
-	token := defaultCollectorKey
+	entropy := make([]byte, 32)
+	if _, err := rand.Read(entropy); err != nil {
+		c.JSON(503, gin.H{"error": "密钥生成失败"})
+		return
+	}
+	token := fmt.Sprintf("lc_%d_%s", id, hex.EncodeToString(entropy))
 	if h.q.WriteValue(c.Request.Context(), collectorTokenKey(id), tokenDigest(token)) != nil || h.q.DeleteKey(c.Request.Context(), collectorDisabledKey(id)) != nil {
 		c.JSON(503, gin.H{"error": "密钥启用失败"})
 		return
@@ -87,32 +92,6 @@ func (h *LiveHandler) CollectorPair(c *gin.Context) {
 }
 func (h *LiveHandler) collectorIdentity(c *gin.Context) (uint64, bool) {
 	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-	if subtle.ConstantTimeCompare([]byte(token), []byte(defaultCollectorKey)) == 1 {
-		rawID := c.GetHeader("X-LingCast-Avatar-ID")
-		if rawID == "" {
-			rawID = "3"
-		}
-		id, err := strconv.ParseUint(rawID, 10, 32)
-		if err != nil || id == 0 {
-			c.JSON(400, gin.H{"error": "数字人 ID 无效"})
-			return 0, false
-		}
-		disabled, err := h.q.ReadValue(c.Request.Context(), collectorDisabledKey(id))
-		if err != nil {
-			c.JSON(503, gin.H{"error": "采集认证暂不可用"})
-			return 0, false
-		}
-		if disabled != "" {
-			c.JSON(401, gin.H{"error": "采集已撤销，请在后台重新启用"})
-			return 0, false
-		}
-		var avatar models.Avatar
-		if h.db.First(&avatar, id).Error != nil {
-			c.JSON(404, gin.H{"error": "数字人不存在"})
-			return 0, false
-		}
-		return id, true
-	}
 	parts := strings.Split(token, "_")
 	if len(parts) != 3 || parts[0] != "lc" || len(parts[2]) != 64 {
 		c.JSON(401, gin.H{"error": "采集密钥无效或已过期"})
