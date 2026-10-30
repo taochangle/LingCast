@@ -216,3 +216,21 @@ class HostHintReadinessTests(unittest.TestCase):
             ready['3001']['input_sha256']='b'*64
             self.assertFalse(host_wardrobe_ready(fixture.path,3,renderer,collector))
         finally:fixture.doCleanups()
+
+class AdminWardrobeTests(unittest.TestCase):
+    def test_operator_ignores_collection_but_rejects_expired_and_previous_session_jobs(self):
+        from stream_worker import LiveAvatarSession
+        from unittest.mock import Mock
+        import time
+        s=LiveAvatarSession.__new__(LiveAvatarSession)
+        now=time.time()*1000
+        s.stream_id='avatar_3';s._started_ms=now-1000;s._running=True;s._redis=Mock()
+        job={'source':'admin','stream_id':'avatar_3','ts':now}
+        self.assertTrue(s._wardrobe_job_current(job))
+        s._redis.get.assert_not_called()
+        for changes in ({'ts':now-1500},{'stream_id':'old_room'},{'ts':now+60000}):
+            self.assertFalse(s._wardrobe_job_current({**job,**changes}))
+        s._started_ms=now-200000
+        self.assertFalse(s._wardrobe_job_current({**job,'ts':now-121000}))
+        s._running=False
+        self.assertFalse(s._wardrobe_job_current(job))

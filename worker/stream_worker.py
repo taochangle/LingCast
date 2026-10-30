@@ -179,6 +179,7 @@ class LiveAvatarSession:
     ):
         self.avatar_id = avatar_id
         self.stream_id = stream_id
+        self._started_ms = time.time()*1000
         self.image_path = image_path
         self.base_video_path = base_video_path
         self.voice_id = voice_id
@@ -1264,6 +1265,15 @@ class LiveAvatarSession:
         while self._running and not finished.wait(0.1):
             pass
 
+    def _wardrobe_job_current(self, job):
+        if job.get('source') == 'admin':
+            return (self._running and job.get('stream_id') == self.stream_id
+                    and self._started_ms <= job.get('ts', 0) <= time.time()*1000
+                    and time.time()*1000-job.get('ts', 0) <= 120000)
+        config = json.loads(self._redis.get(f'live_xhs_config:{self.avatar_id}') or '{}')
+        return (config.get('enabled') and config.get('revision') == job.get('xhs_revision')
+                and time.time()*1000-job.get('ts', 0) <= 120000)
+
     def _play_wardrobe(self, job):
         """Prepare all phases before speaking; no talk during exit or entrance."""
         from ai.wardrobe import plan_change, verify_file, validate_transition
@@ -1272,9 +1282,7 @@ class LiveAvatarSession:
         paths = []
         try:
             def current_room():
-                config = json.loads(self._redis.get(f'live_xhs_config:{self.avatar_id}') or '{}')
-                return (config.get('enabled') and config.get('revision') == job.get('xhs_revision')
-                        and time.time()*1000-job.get('ts',0) <= 120000)
+                return self._wardrobe_job_current(job)
             if not current_room():
                 return
             if not isinstance(self.resident, MuseRenderer):

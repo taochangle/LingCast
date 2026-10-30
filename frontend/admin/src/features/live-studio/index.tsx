@@ -6,7 +6,7 @@ import { HostPanel } from './host-panel'
 import Player from 'xgplayer'
 import 'xgplayer/dist/index.min.css'
 import FlvPlugin from 'xgplayer-flv'
-import { Copy, Eye, EyeOff, LoaderCircle, Power, PowerOff, Video, X } from 'lucide-react'
+import { Copy, Eye, EyeOff, LoaderCircle, Power, PowerOff, Shirt, Video, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -76,6 +76,29 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [messageText, setMessageText] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
+  const [changingOutfit, setChangingOutfit] = useState(false)
+  const [outfitQueued, setOutfitQueued] = useState(false)
+
+  useEffect(() => {
+    if (!outfitQueued) return
+    const timer = window.setTimeout(() => setOutfitQueued(false), 30000)
+    return () => window.clearTimeout(timer)
+  }, [outfitQueued])
+
+  const changeOutfit = async () => {
+    if (!started || changingOutfit || outfitQueued) return
+    setChangingOutfit(true)
+    try {
+      await api.post(`/live/${id}/wardrobe`)
+      setOutfitQueued(true)
+      toast.success('换装已排队，当前口播结束后换下一套')
+    } catch (error) {
+      showApiError(error, '换装提交失败，请稍后重试')
+    } finally {
+      setChangingOutfit(false)
+    }
+  }
+
 
   const sendMessage = async () => {
     const text = messageText.trim()
@@ -395,6 +418,13 @@ export function LiveStudio({ avatarId }: { avatarId: string }) {
                     ? t('live.starting')
                     : t('live.idle')}
               </Badge>
+            )}
+            {id === 3 && (
+              <Button variant='outline' size='sm' onClick={() => void changeOutfit()} disabled={!started || busy || changingOutfit || outfitQueued}
+                title='白衣 → 酒红裙 → 香槟套装，当前口播结束后再换装；不需要开启弹幕采集'>
+                {changingOutfit ? <LoaderCircle className='size-4 animate-spin' /> : <Shirt className='size-4' />}
+                {outfitQueued ? '已排队换装' : '换下一套'}
+              </Button>
             )}
             {started ? (
               <Button variant='destructive' size='sm' onClick={() => void handleStop()} disabled={busy}>

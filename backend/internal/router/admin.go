@@ -79,6 +79,7 @@ func RegisterAdmin(r *gin.Engine, cfg config.Config, deps *app.Deps) {
 			protected.POST("/live/:avatarID/start", liveHandler.Start)
 			protected.POST("/live/:avatarID/stop", liveHandler.Stop)
 			protected.POST("/live/:avatarID/push", liveHandler.Push)
+			protected.POST("/live/:avatarID/wardrobe", liveHandler.ChangeWardrobe)
 			protected.POST("/live/:avatarID/collector-token", liveHandler.CollectorPair)
 			protected.DELETE("/live/:avatarID/collector-token", liveHandler.CollectorPair)
 			protected.GET("/live/:avatarID/xhs", liveHandler.XHS)
