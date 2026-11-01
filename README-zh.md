@@ -1,481 +1,141 @@
 # 灵播 LingCast
 
 <p align="center">
-  <img src="frontend/admin/public/images/logo.svg" alt="灵播 LingCast" width="128">
+  <img src="frontend/admin/public/images/logo.svg" alt="LingCast" width="128">
 </p>
 
 <p align="center"><a href="README.md">English</a> | <a href="README-zh.md">简体中文</a></p>
 
 支持声音克隆、观众互动、自主主持和换装的数字人直播平台。
 
-## 当前技术栈（2026-11-01 文档核对）
+**Qwen 流式回复 → CosyVoice3 流式配音 → MuseTalk 1.5 逐帧口型 → FFmpeg / SRS 推流。**
 
-当前生产直播为 **Qwen SSE 分句 → CosyVoice3 流式音频 → MuseTalk 1.5 逐帧口型 → 常驻 FFmpeg → SRS HTTP-FLV / 外部 RTMP**。手动口播原文直说，不经LLM。旧版 Edge-TTS/Wav2Lip、IndexTTS/LatentSync 保留在代码中用于离线、对照或回退，不是当前直播主链路。
+[架构文档](docs/技术需求与架构文档.md) · [生产部署](docs/cosyvoice-musetalk-live.md) · [开发交接](AGENTS.md) · [文档站](https://taochangle.github.io/LingCast/)
 
-| 层 | 当前实现 |
+## 能做什么
+
+- **直播工作台**：管理数字人、素材和场景，监看竖屏直播，配置外部推流地址与密钥。
+- **手动口播**：输入的文字就是数字人要说的话，原文插播，结束后回到当前造型待机。
+- **观众互动**：Chrome 插件读取直播页面新增评论、进场、点赞和礼物提示，由服务端去重、限频并生成回复或感谢。
+- **自主主持**：准备话术库或分段讲稿，暂停、继续、结束；手动口播和互动优先，讲完继续主持。
+- **点播小节目**：笑话、夸夸、晚安三类固定稿，每类30条，按场次轮换减少重复。
+- **项目速读**：读取公开 GitHub 项目资料，整理讲解内容，可作为口播或主持的参考。
+- **换装**：已准备的沈若棠形象支持白衣、酒红裙、香槟套装轮换；播放完整告别、静音走位、回场语后恢复主持。
+- **音视频缓存**：同一句话按人物、音色、模型和底片身份复用，主持话术可提前生成，减少重复计算。
+- **知识与记录**：知识库检索、人物设定、聊天记录，以及独立观众端；第三方直播评论不维护按昵称识别的连续个人会话。
+
+插件只读用户主动打开的页面DOM，不发送平台评论。仅采集页面实际展示的信息，不保证平台一定提供准确礼物名称或完整观众身份。
+
+## 当前技术栈
+
+| 层 | 实现 |
 | --- | --- |
-| 管理端 | React 19、TypeScript、Vite 8、Tailwind CSS 4、shadcn/ui、TanStack Router/Query，pnpm 10.25 |
-| 观众端 | 独立 Next.js 16 / React 19，xgplayer + HTTP-FLV |
-| API | Go 1.25、Gin、GORM、AWS S3 SDK v2；admin/live/telegram/web/scheduler 多入口 |
-| 数据与存储 | MariaDB 11、Redis 8.2、RustFS（S3兼容）；RAG为 FastAPI + zvec/Jieba |
-| 直播 Worker | 宿主机原生 Python + uv、Redis、boto3、FFmpeg；`worker/.python-version` 为3.12，项目允许>=3.11,<3.14；模型使用独立环境 |
-| LLM与模型 | OpenAI兼容 Qwen Chat Completions SSE、常驻 CosyVoice3 / MuseTalk 1.5，Linux NVIDIA CUDA |
-| 互动采集 | Chrome MV3 插件，用户手动打开直播页后读取DOM，上报后台；不启用旧Playwright采集 |
+| 管理端 | React 19、TypeScript、Vite 8、Tailwind CSS 4、shadcn/ui、TanStack Router / Query |
+| 观众端 | 独立 Next.js 16 / React 19，xgplayer HTTP-FLV |
+| API | Go 1.25、Gin、GORM、AWS S3 SDK v2；admin / live / telegram / web / scheduler 多入口 |
+| 直播 Worker | 宿主机原生 Python、uv、Redis、boto3、FFmpeg |
+| LLM | OpenAI兼容 Qwen Chat Completions SSE，按完整短句入队 |
+| 配音与口型 | 常驻 CosyVoice3、MuseTalk 1.5，独立环境，Linux NVIDIA CUDA |
+| 数据与存储 | MariaDB 11、Redis 8.2、RustFS（S3兼容） |
+| 知识检索 | FastAPI、zvec全文索引、Jieba分词 |
+| 直播与采集 | SRS v5、Nginx、Chrome MV3 插件 |
 
-详细发布步骤见[流式直播](docs/cosyvoice-musetalk-live.md)；换装与分造型缓存见[换装](docs/wardrobe.md)。服务地址及认证只从私有环境文件读取，不提交部署地址、密钥、采集记录或运行素材。
+Worker项目允许 Python `>=3.11,<3.14`，`.python-version`固定为3.12。模型服务各用独立环境，不应向已有模型环境同步全部依赖组。前端使用 pnpm 10.25。
 
-互动优先级：手动口播 → 礼物感谢 → 点赞感谢 → 评论回复 → 欢迎 → 自主主持。当前短段讲完再取下一项。生产只对外开放后台网关，其余服务维持内网或loopback；本地开发端口不能作为生产公网开放清单。
-
-# Contents
-
-- [为什么做](#为什么做)
-- [功能特性](#功能特性)
-- [界面截图](#界面截图)
-- [架构](#架构)
-- [快速开始](#快速开始)
-- [使用说明](#使用说明)
-- [配置](#配置)
-- [API 文档](#api-文档)
-- [目录结构](#目录结构)
-- [常见问题](#常见问题)
-- [生产注意事项](#生产注意事项)
-- [参与贡献](#参与贡献)
-
-## 为什么做
-
-以下零GPU能力指旧ONNX路径；当前生产流式模型使用NVIDIA CUDA。
-
-做口播数字人/直播，传统方案要么依赖昂贵的闭源 API，要么需要高端 GPU 与复杂的声音克隆
-流水线。灵播的目标是：
-
-- 创建数字人只跑**一次** LivePortrait 预处理，之后播报/直播都是轻量推理（Edge-TTS +
-  Wav2Lip ONNX），零 GPU 也能用。
-- 观众端开箱即用：游客/账号身份、持久化聊天、**DeepSeek LLM** 实时回复并开口说话。
-- 部署友好：Docker Compose 一键起基础设施；真实 AI Worker 在宿主机原生跑
-  （macOS MPS / Linux CUDA / AMD ROCm）。
-
-## 功能特性
-
-以下功能目录包含历史离线引擎；当前直播以本文顶部技术栈为准。
-
-- [x] **Avatar Studio（创建）**：形象名称 + 头像展示 + 图片上传 + Edge-TTS 音色选择
-  （列表缓存于 localStorage，默认中文女声晓晓），可填**人物设定**（年龄/身高/体重/
-  族裔/感情状态/性格），提交后显示「基础视频生成中…」并轮询状态。
-- [x] **数字人编辑**：数字人列表卡片「编辑」跳转到 Avatar Studio（`?edit=<id>`）预填
-  信息，保存即 PUT 更新（形象图片不更换）；删除用系统 AlertDialog 确认。
-- [x] **场景化视频库**：每个数字人拥有 1-N 个**场景**（`scenes`，含封面/标题/描述），
-  每个场景下 1-N 个**驱动视频**（`scene_videos`，各有描述）；创建数字人时的基础视频
-  成为默认场景的默认视频（受保护不可删）。**场景管理**页（`/scenes`）可新增/编辑场景、
-  批量上传视频；播报与直播都从这套视频库里选择场景 + 视频。
-- [x] **管理员账号**：登录后可在「账号设置」修改显示名字与密码（持久化到 `admin_users`
-  表，重启不丢）。
-- [x] **Broadcast（离线播报）**：选择已就绪数字人 + 场景/视频（默认取默认场景的默认
-  视频）+ 输入脚本 → 提交任务 → 按阶段/进度轮询 → 状态卡片内嵌 **xgplayer** 播放成品
-  （9:16 竖版，最大 720×1080，模态窗播放）；制作历史记录场景与视频，重试不会混参数。
-- [x] **客户端直播间（观众端）**：独立 Next.js + TailwindCSS 项目（`frontend/live/`，端口
-  **3000**，不属于管理后台）：首页有导航头（游客/账号身份、注册/登录/退出）与
-  **分类筛选**，列出所有开播机器人（`GET /api/live`）；进入 `/rooms/:avatarId`
-  后 xgplayer 拉 HTTP-FLV 观看，聊天面板按用户展示 `用户名 #ID`，可直接向数字人
-  发消息（`POST /api/live/:id/message`）。`/api` 与 `/live` 由 Next 路由处理器在
-  服务端代理，浏览器无 CORS 负担。
-- [x] **抖音式直播间**：桌面端左侧画面铺满 + 模糊背景、9:16 视频居中、右侧聊天固定
-  400px；手机端全屏（隐藏导航）、返回与主播头像覆盖在画面上、胶囊消息 + 覆盖式
-  输入框、点赞爱心动画；聊天支持智能滚动（上翻历史不抢滚动，出现「有新消息」按钮）。
-- [x] **聊天身份与记录持久化**：游客自动分配临时 ID+用户名（`POST /api/chat/guest`）；
-  注册把当前游客身份原地升级为账号（聊天记录不丢），登录把游客消息合并进账号，
-  退出后重新获取新游客身份。用户消息与机器人回复全部入库（`live_users/telegram_users` /
-  `live_messages`），`GET /api/chat/history` 供两端拉取历史。
-- [x] **直播字幕配置**：每个数字人可在 Live Studio「字幕设置」里配置是否显示字幕、
-  字体（`worker/fonts/` 下的文件名）、位置（顶部/底部）、描边宽度与字号，持久化为
-  Avatar 的 JSON 字段 `live_settings`；保存后自动重启直播生效。
-- [x] **默认推流视频**：Live Studio「默认推流视频」选择闲置时播放哪个场景的全部
-  视频及其切换方式——定时每 N 秒按顺序切换，或随机（5-30 秒随机间隔 + 随机下一个）；
-  持久化在 `live_settings`（`idleSceneId/idleSwitchMode/idleSwitchSeconds`）。
-  说话时 Wav2Lip 基于**当前正在显示的那段视频**做口型（不再固定默认视频），说完从
-  该视频衔接处继续。
-- [x] **Agentic 场景/动作视频（1v1）**：DeepSeek 提示词注入当前场景的全部动作视频
-  （S3 Key + 描述），机器人可在句首用 `<action:S3_KEY>` 为该句指定动作画面（标签
-  不出现在文字/字幕/聊天记录里）；观众端直播间画面底部新增 `SceneSwitcher` 胶囊条，
-  点击即可切换数字人的活跃场景（`PUT /api/live/session/:id/scene`），worker 热替换
-  闲置视频池，不打断 24fps Watchdog。
-- [x] **管理端用户列表**：侧边栏「用户相关 → 用户列表」展示全部聊天用户
-  （游客/账号 + 消息数），数据来自 `GET /api/users`。
-- [x] **亮/暗主题**：管理端默认暗色（含白色版 logo），观众端导航头可切换亮/暗并记忆。
-- [x] **悬浮画面监看**：Live Studio 右下角圆形 FAB，点击弹出可拖动的 9:16 视频浮窗，
-  默认不渲染播放器，按需开启。
-- [x] **LLM 消息回复**：客户端消息 → OpenAI Go SDK 调 DeepSeek Responses API
-  （`base_url=https://api.deepseek.com`，模型 `deepseek-v4-flash`）→ 回复按句切块
-  入直播队列 → TTS → 口型 → 推流；未配置 `OPENAI_API_KEY` 时原样回读输入（测试模式）。
-  创建时的人物设定会作为**内置提示词**注入，观众问年龄/身高/感情状态等时按设定回答。
-- [x] **Edge-TTS 语音合成**：GPU-free 云端神经音色，按 avatar 的 `voice_id` 选声，
-  一条句子约 1-2 秒。
-- [x] **LivePortrait 基础视频预处理**：创建数字人时生成静音 24fps 驱动视频，仅此一次。
-- [x] **Wav2Lip(ONNX) 口型合成**：基于预生成 base 视频，嘴部逐帧匹配语音；ONNX +
-  CoreML 执行器，CPU 线程数受限（默认 4），短 base 自动循环覆盖任意脚本长度。
-- [x] **动画节奏可调**：驱动模板可换、播放速度/动作幅度可调（见「配置」中的
-  `LIVEPORTRAIT_DRIVING*` 参数）。
-- [x] **基础视频去眨眼**：驱动模板眼部表情通道已冻结（不眨眼），保留耸肩/身体微晃，
-  约 3 秒一次（`LIVEPORTRAIT_DRIVING_SPEED=0.2`）。
-- [x] **数字人分类**：Avatar 创建时可选「直播分类」（闲聊/知识/娱乐/游戏/带货/其他），
-  观众端首页按分类筛选直播。
-- [x] **国际化（中/英）**：管理后台与观众端均内置中/英界面，导航栏可一键切换
-  （记住选择并自动跟随浏览器语言）；后端错误消息按请求 `Accept-Language` 返回
-  对应语言；直播间 AI 按界面语言回复。
-- [x] **人脸修复（解决 Wav2Lip 口型变形）**：双轨增强器（`worker/ai/enhancer.py`）——
-  离线播报用 CodeFormer ONNX（保真度 `w=0.6`）全脸修复（默认开启），直播链路用
-  GFPGANv1.4 ONNX 只修复人脸 ROI + 羽化遮罩（**直播管线完全不用人脸增强**——
-  Watchdog 架构要求恒定 24fps，GFPGAN 在 Apple Silicon CoreML 约 1s/帧）。
-  纯 ONNX 推理（CoreML/CUDA/ROCm）；离线效果已验证（见下方对比视频）。
-- [x] **Watchdog 直播架构（不再转圈）**：独立写帧线程以恒定 24fps 推给 ffmpeg，
-  消费 Ready 帧队列；Wav2Lip 还在产帧时立即回退 base 动画 + 静音，播放器
-  永不掉线/缓冲。推理异步小批量（8 帧）产帧，连续句子无缝拼接。
-- [x] **私有知识库 + 长期记忆（本地 RAG，零模型）**：知识库全局共享，
-  数字人通过关系表 N:N 绑定（多个数字人可共用一个知识库）。独立的
-  `service-rag` 微服务（FastAPI + uv + [zvec](https://zvec.org) 进程内
-  全文索引）用自带 Jieba 中文分词——**不需要 sentence-transformers /
-  torch / 模型下载，也不需要 RediSearch**。文档（粘贴文本或上传
-  .txt/.pdf）按 ~300 字 / 50 字重叠切块并按知识库建索引；直播问答注入
-  最近 10 条房间消息 + 该数字人绑定知识库聚合的 Top-3 知识，严格按
-  知识库回答、未知才说不知道。
-- [x] **知识库管理界面**：`/knowledge` 全局知识库列表（创建/重命名/删除），
-  `/knowledge/$id` 管理知识库内的文档（文本/.txt/.pdf、删除、查看分块），支持按
-  知识库做 Top-3 检索测试；数字人编辑页右侧「知识库」面板勾选绑定（可多选、多数字人
-  共用一个知识库）。
-- [x] **Edge-TTS 微服务**（`services/tts/`，Docker 内网 :8002）：async
-  `edge_tts.Communicate` → ffmpeg → **16kHz / 16-bit / 单声道 PCM WAV**
-  （Wav2Lip 下游要求的确切格式）→ 上传 S3（RustFS）→ 只返回 S3 key + 元数据；
-  `finally` 清理临时文件，S3 配置全部来自环境变量。
-- [x] **聊天日志页**：`/chat-logs` 按数字人/用户 ID/日期/关键字检索 + 分页；
-  机器人回复标注「命中知识库」并可展开查看命中的知识片段。
-- [x] **观众端用户中心**：`/account` 展示游客/账号身份，支持注册/登录/退出与
-  「我的消息」（跨房间）；首页增加 Hero CTA、卡片悬停进入直播间、页脚账号入口。
-- [x] **Telegram Mini App 登录**：`frontend/telegram`（React + Vite + Tailwind +
-  `@twa-dev/sdk`，:3002）把 `WebApp.initData` 提交到 `POST /api/auth/telegram`
-  （api-telegram）；后端用 `TG_BOT_TOKEN` 做 HMAC-SHA-256 签名校验（24h 时效），
-  通过后按 `telegram_id` 自动注册/登录（HttpOnly cookie）。本地联调用根目录
-  `ngrok.yml` 双隧道（TMA + API 网关），`docker compose up ngrok` 即可。
-  启动时 api-telegram 会自动注册 Telegram：`setWebhook` + `setChatMenuButton`
-  （Mini App 入口），地址优先取 `TG_WEBHOOK_URL`/`TG_MINIAPP_URL`（生产固定
-  域名），缺失时回退 ngrok 隧道发现（`api-gateway`/`tg-app`）；两者都设置时
-  不再查询 ngrok。
-- [ ] **Mock 管线**（`AI_MODE=mock`）：轻量占位，供 Docker Worker 镜像演示。
-
-## 界面截图
-
-**管理后台（灵播）**
-
-| | | |
-| --- | --- | --- |
-| ![登录页](docs/images/admin1.png) | ![数字人列表](docs/images/admin2.png) | ![创建数字人](docs/images/admin3.png) |
-| ![播报制作](docs/images/admin4.png) | ![直播台](docs/images/admin5.png) | ![悬浮监看](docs/images/admin6.png) |
-| ![任务中心](docs/images/admin7.png) | ![用户列表](docs/images/admin8.png) | ![账号设置](docs/images/admin9.png) |
-
-**观众端（灵播）**
-
-| | | |
-| --- | --- | --- |
-| ![首页](docs/images/pc1.png) | ![直播间-桌面](docs/images/pc2.png) | ![直播间-聊天](docs/images/pc3.png) |
-| ![直播间-暗色](docs/images/pc4.png) | ![直播间-亮色](docs/images/pc5.png) | |
-
-## 人脸修复效果对比
-
-离线播报在开启/关闭 CodeFormer 人脸修复下的成品对比（同一脚本、同一数字人，
-重点看下巴与嘴部区域；离线默认开启，`FACE_ENHANCER=off` 可关闭）：
-
-| 未开启 CodeFormer | 开启 CodeFormer |
-| --- | --- |
-| <img src="docs/videos/noCodeFormer.gif" width="240" alt="未开启 CodeFormer"> | <img src="docs/videos/CodeFormer.gif" width="240" alt="开启 CodeFormer"> |
-| [▶ 下载 MP4](docs/videos/noCodeFormer.mp4) | [▶ 下载 MP4](docs/videos/CodeFormer.mp4) |
-
-## 架构
-
-生产主链路：Chrome DOM事件 → Go API/Qwen SSE → Redis → 原生Worker → CosyVoice3/MuseTalk PCM+JPEG → FFmpeg/SRS。下图保留通用平台与旧离线路径。
+## 数据流与播放
 
 ```text
-管理后台 :8080 ──> Nginx (frontend)
-  ├── /api    ──> api-admin (Gin) ──> MariaDB 11 / Redis 8.2 / RustFS / service-rag
-  └── webhooks ──> api-scheduler（Worker 任务/基础视频回调）
-  └── /media  ──> RustFS (S3 兼容)
-
-观众端 :3000 ──> Next.js（服务端代理 /api、/live）──> api-live / SRS
-
-Python AI Worker ──> Redis 队列 / boto3 下载素材
-                  ──> 创建: LivePortrait 生成 base 视频（一次性预处理）
-                  ──> 使用: Edge-TTS → Wav2Lip(ONNX) 离线播报 / 直播推流
-                  ──> 上传成品到 S3, 通过 Webhook 回写任务状态
-
-service-rag ──> zvec 进程内全文索引（Jieba 中文分词，零模型）
-             ──> Go API 直连 /v1/knowledge/{ingest,search,delete,chunks}
-
-service-tts ──> async edge-tts → 16kHz PCM WAV → S3（RustFS）
-             ──> POST /v1/tts/synthesize 只返回 S3 key（媒体不过 HTTP）
+手动口播 ───────────────────────────────┐
+Chrome DOM事件 → 采集API → 分类/去重/限频 ├→ Redis优先队列
+观众提问 → Qwen SSE → 完整短句 ─────────┘
+    → 直播Worker → CosyVoice3音频块 → MuseTalk口型帧
+    → 配对PCM/JPEG → 常驻FFmpeg → SRS
+    → HTTP-FLV监看 / 外部RTMP
 ```
 
-- 管理端前端：React + TypeScript + Vite + Tailwind + shadcn/ui（品牌「灵播
-  LingCast」，默认暗色主题，可切换亮色；需管理员登录）。
-- 观众端前端：独立 Next.js 16 + TailwindCSS 4（`frontend/live/`，亮/暗双主题可切换，
-  无需登录）。
-- 后端：Go 1.25 + Gin + GORM，多入口admin/live/telegram/web/scheduler，AWS S3 SDK v2。
-- Worker：Python 3.12（项目允许>=3.11,<3.14）+ uv、boto3、Redis、FFmpeg；模型使用独立环境。
-- 数据：MariaDB 11、Redis 8.2、RustFS S3；RAG采用FastAPI/zvec/Jieba。
-- 生产模型：Qwen SSE、CosyVoice3、MuseTalk 1.5。宿主机CUDA服务保持私有，仅必要后台网关对外；开发Compose端口不代表生产开放策略。
+手动口播不经LLM改写；自由评论回复使用Qwen，固定点播、感谢和欢迎走对应规则。播放优先级：
 
-## 快速开始
+**手动口播 → 礼物感谢 → 点赞感谢 → 评论回复 → 欢迎 → 自主主持。**
 
-以下是通用本地/历史管线启动步骤。生产CUDA流式链路请按[独立部署说明](docs/cosyvoice-musetalk-live.md)操作，不要向已有模型环境同步全部依赖组。
+当前短段讲完才取下一项，不硬打断正在说的话。CosyVoice与口型计算按音频窗口衔接，收到配对数据就播放，不等待完整MP4；完成后回到当前造型待机。已播出的句子无法在后续模型失败时撤回。
 
-### 0. 前置依赖
+当前已准备知夏（ID2）与沈若棠（ID3）的口型profile。新增数字人或底片必须先完成匹配的预处理，不能直接套用其他人物的人脸数据。当前MuseTalk生产输出为25fps、16kHz单声道音频；底片规格及身份映射见[流式手册](docs/cosyvoice-musetalk-live.md)。
 
-- Git、Docker Desktop（或 Docker Engine + Compose）
-- Python 3.11 + [uv](https://docs.astral.sh/uv/)
-- 宿主机 macOS 需要 FFmpeg：`brew install ffmpeg`
-- 前端开发需要 pnpm 10：`npm i -g pnpm@10`
-- 后端开发需要 Go 1.22+
+## 部署与本地开发
 
-### 1. 克隆并启动 Docker 服务
+代码、依赖和编排文件不能替代模型权重、参考音频、人脸预处理缓存与私有配置。新机器不能只启动Compose就获得完整GPU直播能力。
 
-```bash
-git clone https://github.com/taochangle/LingCast.git && cd LingCast
+1. 准备 Git、Docker Engine / Compose、Go 1.25、pnpm 10.25、Python / uv、FFmpeg，以及适配模型环境的 NVIDIA 驱动和CUDA。
+2. 克隆仓库，复制环境模板并填写自己的配置。生产仅开放必要后台网关，队列、存储、SRS内部入口和模型均使用内网或loopback。
+3. 按[流式生产手册](docs/cosyvoice-musetalk-live.md)准备独立模型环境、权重、参考声音与形象profile，检查健康及预热状态。
+4. 启动基础设施、相关API与前端，再启动原生直播Worker；核对API和Worker版本、素材身份及服务地址。
+5. 在Live Studio先验证待机、手动口播、播放结束和缓存复用，再按需开启插件互动与外部推流。
+
+```sh
+git clone https://github.com/taochangle/LingCast.git
+cd LingCast
 cp .env.example .env
-docker compose up --build
+cp worker/.env.local.example worker/.env.local
 ```
 
-访问 <http://localhost:8080>，左侧菜单进入 **Avatar Studio**。
+以上仅建立配置文件；模板包含其他工作流选项，需按当前流式手册选择填写。`deploy/chengdu.override.yml`展示内网/loopback隔离；主机目录、模型环境与服务单元须适配自己的环境。`deploy/chengdu.sh`是整体部署入口，**不要为文档、插件或素材更新无差别执行它**。
 
-> **Note**：管理后台需要登录后才能访问（默认 `admin` / `admin123`，请在 `.env` 中
-> 修改 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 并重启 API 容器）。观众端（:3000）不受
-> 影响，仍可直接进入直播间。
+管理端本地开发（API及依赖需另行准备）：
 
-### 2. 准备 Worker 环境（uv）
-
-```bash
-cd worker
-uv venv                    # 按 .python-version 使用 CPython 3.11
-uv sync --all-groups       # 安装全部依赖（含 PyTorch MPS、LivePortrait、Wav2Lip）
-cp .env.local.example .env.local
-```
-
-> 约定：所有 Python 命令一律通过 `uv run python ...` 执行（在 `worker/` 目录下），
-> 不要直接调用系统 `python`/`python3`，也不要使用 `requirements.txt`——依赖统一由
-> `pyproject.toml` + `uv.lock` 管理，新增依赖用 `uv add`。
-
-### 3. 准备模型（二选一）
-
-**方式 A：新设备下载（约 4GB，需要网络）**
-
-```bash
-cd worker
-uv run python download_models.py --models all
-```
-
-脚本会克隆 LivePortrait / Wav2Lip 代码到 `worker/external/`，下载权重到
-`worker/models/`（两者均已 gitignore），并自动完成：把 wav2lip_gan.pth 本地导出为
-ONNX（约 145MB）、下载 SCRFD 人脸检测 ONNX（约 3MB）。
-
-- 国内网络加速：`HF_ENDPOINT=https://hf-mirror.com uv run python download_models.py`
-- GitHub 慢时走代理：`git config --global http.proxy http://127.0.0.1:7897`
-
-**方式 B：从旧设备拷贝（最快）**
-
-把旧机器的 `worker/models/` 与 `worker/external/` 两个目录整体拷贝到新机器对应
-位置即可，`download_models.py` 会自动跳过已存在的文件。
-
-### 4. 启动 Worker（真实管线）
-
-```bash
-cd worker
-uv run python -u worker.py           # 离线播报 / 创建预处理
-uv run python -u stream_worker.py    # 实时直播（与 worker.py 并存）
-```
-
-`worker.py` 自动加载 `worker/.env.local`（已导出的环境变量优先）。`AI_MODE=real`
-时跑真实模型管线；模型缺失时会有明确提示。
-
-### 5. 本地前端开发
-
-```bash
-# 管理端（Vite，端口 5173）
+```sh
 cd frontend/admin
-cp .env.example .env.local   # VITE_API_BASE_URL=http://localhost:8080
-pnpm install
-pnpm dev
-
-# 观众端（Next.js，端口 3000）
-cd frontend/live
 pnpm install
 pnpm dev
 ```
 
-### Linux + AMD Radeon 部署（ROCm，如 RX 6800 XT）
+观众端在`frontend/live/`执行相同命令。后端测试在`backend/`执行`go test ./...`；模型、素材或真实直播联调需要额外环境，不由单元测试代替。
 
-6800 XT 是 RDNA2（gfx1030），ROCm 6.x / 7.x 均支持。两种方式任选：
+## 配置与安全
 
-**方式 A：官方 ROCm PyTorch 容器（推荐，torch 已预装）**
+| 配置 | 用途 |
+| --- | --- |
+| `LINGCAST_PUBLIC_ORIGIN` | 私有环境中配置后台访问源；插件打包时读取默认服务器，用户可编辑 |
+| `OPENAI_API=chat_completions` | 选择Qwen兼容聊天接口 |
+| `V2_QWEN_BASE_URL` / `V2_QWEN_MODEL` / `V2_QWEN_API_KEY` | Qwen服务地址、模型与认证 |
+| `LIPSYNC_ENGINE=musetalk` | 选择当前直播口型引擎 |
+| `COSYVOICE_URL` / `MUSETALK_RESIDENT_URL` | 内部常驻模型入口 |
+| `MUSETALK_WARDROBE_URL` / `WARDROBE_MANIFEST` | 已准备的新造型服务与运行清单 |
+| `S3_*` / `REDIS_*` | 素材存储与队列；按各进程配置格式填写 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理员初始化配置；使用独立强密码 |
 
-```bash
-docker run -it --rm --network=host --ipc=host \
-  --device=/dev/kfd --device=/dev/dri --group-add video \
-  -v /path/to/LingCast:/workspace -w /workspace/worker \
-  rocm/pytorch:rocm7.14_ubuntu24.04_py3.13_pytorch_release_2.12.0 bash
-```
+服务地址、凭据、外部推流密钥仅放私有配置。不要提交`.env`、打包后的插件ZIP、真实采集事件、运行日志、模型和媒体素材。插件采集凭据由后台按数字人生成，限时有效，可重新生成或撤销；不存在共享默认采集密码。
 
-容器内（Python 3.13，torch 2.12 ROCm 已就绪）：
+观众输入经过提示词防注入和内容过滤，但这不是对所有输出的安全保证；手动口播按原文播放，需由操作者自行确认。[防注入说明](docs/live-prompt-guard.md)。
 
-```bash
-pip install uv ffmpeg        # 容器通常缺 uv 与 ffmpeg
-uv sync --all-groups --no-group cuda --python python3 --inexact
-cp .env.local.example .env.local
-uv run python -u worker.py
-```
+## 缓存、换装与发布边界
 
-> **Warning**：`--inexact` 很重要——镜像预装的 torch 不在 lock 里，不加这个参数
-> `uv sync` 会把 torch 剪掉。`--network=host` 让容器直接访问宿主机的 Redis/RustFS。
+完整音视频事件保存在模型实例磁盘`production-cache/`，按人物、文字、底片及模型/参考声音指纹隔离。不完整输出不会成为可用缓存；容量淘汰或指纹改变会导致重新生成。服务重启不主动清空磁盘缓存，但Worker内存准备状态需要重建。
 
-**方式 B：裸机 Ubuntu + ROCm**
+沈若棠两套新造型已完成各27条主持话术的预生成及复读命中验证。该记录不意味着所有新句都无需等待，也不保证未来缓存永不淘汰。生成耗时、Worker首帧、浏览器监看与平台延迟应分别测量，不宣称固定秒级开口。
 
-```bash
-cd worker
-uv sync --all-groups --no-group cuda
-uv pip install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/rocm6.3
-# 以后每次 uv sync 都要加 --inexact，否则上面手动装的 torch 会被移除
-```
+换装必须等当前口播完成，依次播放旧造型告别 → 静音离场/空镜/新造型入场 → 切换新idle与renderer → 回场语 → 恢复互动与主持。更新底片需同时准备口型数据与缓存。当前Worker重建会短暂重连，不承诺无缝不停播热更。
 
-验证：`uv run python -c "import torch; print(torch.cuda.is_available(), torch.version.hip)"`
+文档更新仅同步文件；插件更新只打包相关产物；业务更新仅发布相关服务。模型重启需明确授权，不能为普通功能或素材更新重启模型。详见[换装与回退](docs/wardrobe.md)。
 
-**Worker 环境变量（`worker/.env.local`）**
-
-```bash
-AI_MODE=real
-LIVEPORTRAIT_DEVICE=cuda
-WAV2LIP_PROVIDER=rocm    # ROCm EP 不支持 LSTM 时会自动逐算子回退 CPU，不影响正确性
-```
-
-> 如果 ROCm EP 在你的卡上有问题，`WAV2LIP_PROVIDER=cpu` 同样可用（CPU 推理本身
-> 就有 35fps+）。
-
-## 使用说明
-
-### 创建数字人
-
-管理后台 → **Avatar Studio**：上传形象图片、选择音色与分类、填写人物设定 → 创建后
-自动进入基础视频生成（LivePortrait 预处理，约 1-2 分钟），就绪后即可用于播报/直播。
-
-### 离线播报
-
-**Broadcast**：选数字人 + 场景/视频（默认取默认场景的默认视频）+ 输入脚本 → 提交任务
-→ 制作历史里按阶段/进度查看并播放/下载成品（9:16 MP4，Edge-TTS + Wav2Lip 合成）；
-重试任务直接复用已缓存的 TTS 音频。
-
-### 实时直播
-
-**Live Studio**：开启直播后数字人进入常驻推流（闲置态播放所选场景的全部视频，定时
-N 秒或随机切换）；当前生产观众消息走 **Qwen SSE → CosyVoice3 → MuseTalk** 回复并开口说话。「默认推流视频」
-选择闲置画面来自哪个场景及切换方式，「字幕设置」按数字人配置字幕
-（开关/字体/位置/边框/字号，字体放 `worker/fonts/`）。
-
-```bash
-# 命令行示例
-curl -X POST http://localhost:8080/api/live/9/start
-curl -X POST http://localhost:8080/api/live/9/message \
-  -H 'Content-Type: application/json' \
-  -d '{"text": "你好，在吗？"}'
-curl http://localhost:8080/api/live/9/status
-```
-
-播放地址：`http://localhost:8080/live/avatar_9.flv`（前端用 xgplayer + flv 插件拉流）。
-
-### 观众端
-
-打开 <http://localhost:3000>：首页按分类筛选开播数字人 → 进入直播间（桌面左右布局 /
-手机全屏抖音式）→ 游客可直接发消息，注册/登录后聊天记录跟随账号。
-
-## 配置
-
-| 参数 | 位置 | 说明 |
-| --- | --- | --- |
-| `AI_MODE` | `.env` / `.env.local` | `mock`（Docker 默认）或 `real`（宿主机） |
-| `S3_*` | `.env` / `.env.local` | 对象存储端点、凭据、桶名、公网前缀 |
-| `REDIS_*` | `.env` / `.env.local` | Redis 地址、密码、队列 Key |
-| `REDIS_IMAGE` | `.env` | Redis 镜像（默认 `redis:8.2.2-alpine`） |
-| `EMBED_SERVER_URL` | `.env` | 知识库检索服务地址（默认 `http://service-rag:8001`，Docker 内网） |
-| `LIVEPORTRAIT_DEVICE` | `worker/.env.local` | `mps`（macOS 默认）/ `cuda`（Linux）/ `cpu` |
-| `LIVEPORTRAIT_DRIVING*` | `worker/.env.local` | 模板、速度、幅度 |
-| `LIVEPORTRAIT_OUTPUT_FPS` | `worker/.env.local` | base 视频帧率（默认 24） |
-| `WAV2LIP_PROVIDER` | `worker/.env.local` | `coreml`（macOS 默认）/ `rocm`（AMD）/ `cuda` / `cpu` |
-| `WAV2LIP_THREADS` | `worker/.env.local` | ONNX 线程数上限（默认 4） |
-| `WAV2LIP_BACKEND` | `worker/.env.local` | `onnx`（默认）/ `torch`（慢，对照） |
-| `OPENAI_BASE_URL` | `.env` | LLM 端点（默认 `https://api.deepseek.com`） |
-| `OPENAI_API_KEY` | `.env` | DeepSeek API Key；不设则消息原样回读 |
-| `OPENAI_MODEL` | `.env` | Responses 模型（默认 `deepseek-v4-flash`） |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `.env` | 管理后台登录账号（默认 admin/admin123） |
-| `TG_BOT_TOKEN` | `.env` | Telegram 机器人 token（initData 校验 + webhook 注册） |
-| `TG_WEBHOOK_URL` / `TG_MINIAPP_URL` | `.env` | 生产固定地址（可选）；留空 = ngrok 发现 |
-| `NGROK_AUTHTOKEN` / `NGROK_API_URL` | `.env` | ngrok 认证 + agent API（默认 `http://ngrok:4040`） |
-| `STREAM_SUBTITLE_FONT` | `worker/.env.local` | 字幕回退字体（未配或字体缺失时用） |
-
-完整清单见 `worker/.env.local.example`。动画节奏调整（驱动模板/速度/幅度）见
-`LIVEPORTRAIT_DRIVING*` 注释与 `worker/.env.local.example`。
-
-## API 文档
-
-各 HTTP 微服务的交互式 OpenAPI/Swagger 文档统一由独立的 `docs` 网关聚合，
-经 nginx 入口 `http://localhost:8080/doc/` 访问：
-
-- `/doc/api-admin/` — 管理端 API（gin-swagger）
-- `/doc/api-live/` — 观众端 / 直播聊天 API（gin-swagger）
-- `/doc/api-scheduler/` — Worker Webhook（gin-swagger）
-- `/doc/service-rag/` — 知识库服务（FastAPI /docs）
-- `/doc/service-tts/` — 语音服务（FastAPI /docs）
-
-## 目录结构
+## 目录与文档
 
 ```text
-LingCast/
-├── backend/        Go module — 三个微服务：cmd/api-admin、cmd/api-live、cmd/api-telegram、cmd/api-web、
-│                   cmd/api-scheduler（共享 internal/ 包）
-├── services/       Python 微服务
-│   ├── rag/        本地 RAG 微服务（FastAPI + uv + zvec FTS/Jieba，:8001）
-│   └── tts/        Edge-TTS 微服务（FastAPI + uv + edge-tts + ffmpeg，:8002）
-├── frontend/       BFF 多客户端矩阵（所有前端）
-│   ├── admin/      灵播管理后台（React + shadcn/ui，:8080）
-│   ├── live/       Next.js 观众端（独立项目，:3000）
-│   ├── web/        新增 1v1 网站（Next.js + PayPal + zustand，:3001）
-│   └── telegram/   新增 TG 小程序（React + Vite + @twa-dev/sdk，:3002）
-├── worker/         Python 3.11 AI Worker（uv、Redis、boto3）
-│   ├── ai/         base/mock/real 管线、TTS、渲染、ONNX 口型
-│   ├── fonts/      字幕字体目录（gitignore，见 fonts/README.md）
-│   ├── external/   gitignore：LivePortrait / Wav2Lip 克隆代码
-│   ├── models/     gitignore：全部权重（LivePortrait / Wav2Lip ONNX）
-│   └── streaming/  ffmpeg 管道 + Pillow 字幕渲染
-├── docs/           架构文档 + Roadmap（TODO.md）+ 界面截图（images/）
-├── docker-compose.yml / .env.example
-└── AGENTS.md       开发交接说明（新设备快速接手）
+backend/           Go API及测试
+frontend/admin/    管理后台与Live Studio
+frontend/live/     独立观众端
+frontend/web/      一对一网站客户端
+frontend/telegram/ Telegram Mini App
+worker/            直播Worker、模型服务、缓存与播放管线
+extensions/        Chrome采集插件及打包工具
+services/          知识检索与其他辅助服务
+deploy/            Compose覆盖、服务单元与部署脚本
+docs/              架构、专项手册、历史说明
 ```
 
-## 常见问题
+- [流式直播部署与排障](docs/cosyvoice-musetalk-live.md)
+- [Chrome插件采集](docs/chrome-collector.md) · [感谢优先级](docs/thanks-priority.md)
+- [自主主持](docs/autonomous-host.md) · [点播节目](docs/viewer-interaction.md)
+- [换装与分造型缓存](docs/wardrobe.md)
+- [旧引擎与旧启动流程归档](docs/history/legacy-readme-zh.md)
 
-- **任务一直 processing**：看 `worker` 日志尾部。口型阶段卡住通常是模型缺失，跑
-  `cd worker && uv run python download_models.py --models wav2lip` 补齐。
-- **GitHub/HF 下载慢**：GitHub 走代理，HF 用 `HF_ENDPOINT=https://hf-mirror.com`。
-- **口型 CPU 打满/极慢**：确认 `WAV2LIP_BACKEND` 为 `onnx`（torch 版仅作对照）。
-- **视频无声音**：成品由 Wav2Lip 阶段 mux Edge-TTS 语音；若用 mock 管线则以其
-  离线 TTS 为音轨。
-- **直播推流没画面**：先确认 `docker compose up` 里 srs 健康、`/live/<id>.flv`
-  可拉流；ffmpeg 日志在 `stream-<id>/ffmpeg.log`。
-
-## 生产注意事项
-
-- 开发环境直接运行 RustFS 并开放 bucket 公开读（便于浏览器播放）。生产应改用
-  真实 RustFS + 私有 bucket + 预签名 URL，调整 `S3_PUBLIC_BASE_URL` 与 nginx
-  `/media` 代理。
-- 生产环境请收紧 Worker 回调 Webhook 的鉴权。
-- Linux/CUDA 生产部署需替换 PyTorch 为 CUDA 版（见 `worker/pyproject.toml` 注释），
-  Wav2Lip ONNX 可在 NVIDIA 上用 `WAV2LIP_PROVIDER` 选择 GPU provider。
-
-## 参与贡献
-
-- 架构与演进方向见 [docs/TODO.md](docs/TODO.md) 与 [架构文档](docs/技术需求与架构文档.md)。
-- 开发约定见 [AGENTS.md](AGENTS.md)（新设备快速上手、目录速览、已知坑）。
-- 提交信息沿用仓库现有风格：`feat:` / `fix:` / `docs:` / `refactor:` 前缀 + 中文或
-  英文描述。
+历史文档用于追溯其他管线，不作为当前生产默认配置或部署指令。
