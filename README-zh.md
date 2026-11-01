@@ -6,14 +6,25 @@
 
 <p align="center"><a href="README.md">English</a> | <a href="README-zh.md">简体中文</a></p>
 
-端到端 AI 数字人直播平台：创建数字人（形象 + 音色 + 人物设定）→ LivePortrait 生成
-基础视频 → **Edge-TTS 语音 + Wav2Lip 口型** → **DeepSeek LLM 实时回复** → SRS 直播推流。
+支持声音克隆、观众互动、自主主持和换装的数字人直播平台。
 
-管理后台 `:8080` · 观众端 `:3000` · [架构文档](docs/技术需求与架构文档.md) ·
-[Roadmap / TODO](docs/TODO.md) · [开发交接说明](AGENTS.md) ·
-[文档站点](https://taochangle.github.io/LingCast/)
+## 当前技术栈（2026-11-01 文档核对）
 
-成都当前部署：**Qwen 流式 → CosyVoice → MuseTalk**，使用 Chrome 插件读取直播互动。播放顺序为手动口播 → 评论回复 → 欢迎 → 自主主持。见[实时直播链路](docs/cosyvoice-musetalk-live.md)和[插件采集](docs/chrome-collector.md)；下方通用安装说明仍包含旧引擎。
+当前生产直播为 **Qwen SSE 分句 → CosyVoice3 流式音频 → MuseTalk 1.5 逐帧口型 → 常驻 FFmpeg → SRS HTTP-FLV / 外部 RTMP**。手动口播原文直说，不经LLM。旧版 Edge-TTS/Wav2Lip、IndexTTS/LatentSync 保留在代码中用于离线、对照或回退，不是当前直播主链路。
+
+| 层 | 当前实现 |
+| --- | --- |
+| 管理端 | React 19、TypeScript、Vite 8、Tailwind CSS 4、shadcn/ui、TanStack Router/Query，pnpm 10.25 |
+| 观众端 | 独立 Next.js 16 / React 19，xgplayer + HTTP-FLV |
+| API | Go 1.25、Gin、GORM、AWS S3 SDK v2；admin/live/telegram/web/scheduler 多入口 |
+| 数据与存储 | MariaDB 11、Redis 8.2、RustFS（S3兼容）；RAG为 FastAPI + zvec/Jieba |
+| 直播 Worker | 宿主机原生 Python + uv、Redis、boto3、FFmpeg；`worker/.python-version` 为3.12，项目允许>=3.11,<3.14；模型使用独立环境 |
+| LLM与模型 | OpenAI兼容 Qwen Chat Completions SSE、常驻 CosyVoice3 / MuseTalk 1.5，Linux NVIDIA CUDA |
+| 互动采集 | Chrome MV3 插件，用户手动打开直播页后读取DOM，上报后台；不启用旧Playwright采集 |
+
+详细发布步骤见[流式直播](docs/cosyvoice-musetalk-live.md)；换装与分造型缓存见[换装](docs/wardrobe.md)。服务地址及认证只从私有环境文件读取，不提交部署地址、密钥、采集记录或运行素材。
+
+互动优先级：手动口播 → 礼物感谢 → 点赞感谢 → 评论回复 → 欢迎 → 自主主持。当前短段讲完再取下一项。生产只对外开放后台网关，其余服务维持内网或loopback；本地开发端口不能作为生产公网开放清单。
 
 # Contents
 
@@ -32,6 +43,8 @@
 
 ## 为什么做
 
+以下零GPU能力指旧ONNX路径；当前生产流式模型使用NVIDIA CUDA。
+
 做口播数字人/直播，传统方案要么依赖昂贵的闭源 API，要么需要高端 GPU 与复杂的声音克隆
 流水线。灵播的目标是：
 
@@ -42,6 +55,8 @@
   （macOS MPS / Linux CUDA / AMD ROCm）。
 
 ## 功能特性
+
+以下功能目录包含历史离线引擎；当前直播以本文顶部技术栈为准。
 
 - [x] **Avatar Studio（创建）**：形象名称 + 头像展示 + 图片上传 + Edge-TTS 音色选择
   （列表缓存于 localStorage，默认中文女声晓晓），可填**人物设定**（年龄/身高/体重/
@@ -174,6 +189,8 @@
 
 ## 架构
 
+生产主链路：Chrome DOM事件 → Go API/Qwen SSE → Redis → 原生Worker → CosyVoice3/MuseTalk PCM+JPEG → FFmpeg/SRS。下图保留通用平台与旧离线路径。
+
 ```text
 管理后台 :8080 ──> Nginx (frontend)
   ├── /api    ──> api-admin (Gin) ──> MariaDB 11 / Redis 8.2 / RustFS / service-rag
@@ -198,21 +215,14 @@ service-tts ──> async edge-tts → 16kHz PCM WAV → S3（RustFS）
   LingCast」，默认暗色主题，可切换亮色；需管理员登录）。
 - 观众端前端：独立 Next.js 16 + TailwindCSS 4（`frontend/live/`，亮/暗双主题可切换，
   无需登录）。
-- 后端：Go + Gin + GORM，拆分为三个微服务（同一 module 共享 internal 包）——
-  `api-admin`（管理端，:8081）、`api-live`（观众端/直播聊天，:8082）、
-  `api-scheduler`（Worker 回调，:8083）；标准 AWS S3 SDK v2。
-- AI Worker：Python 3.11，uv 管理依赖，boto3 + Redis。
-- 知识库微服务：`service-rag`（FastAPI + uv + zvec FTS，Jieba 分词，零模型依赖，
-  Docker 内网 8001，数据持久化在 volume `rag-zvec-data`）。
-- 存储：S3 兼容对象存储（开发环境直接运行 RustFS）。
-- 部署：Docker Compose 编排基础设施与前端；**真实 AI Worker 在宿主机原生运行**
-  （macOS Apple Silicon 用 MPS/CoreML，Linux 用 NVIDIA CUDA 或 AMD ROCm），
-  宿主机仅开放必要端口：**3000**（观众端）、**8080**（管理端/API）、**1935**
-  （RTMP 推流）、**6379**（Redis）与 **9000**（RustFS）；`api-admin`、
-  `api-live`、`api-scheduler`、`service-rag`、`service-tts` 均在内网，不开放
-  宿主端口。
+- 后端：Go 1.25 + Gin + GORM，多入口admin/live/telegram/web/scheduler，AWS S3 SDK v2。
+- Worker：Python 3.12（项目允许>=3.11,<3.14）+ uv、boto3、Redis、FFmpeg；模型使用独立环境。
+- 数据：MariaDB 11、Redis 8.2、RustFS S3；RAG采用FastAPI/zvec/Jieba。
+- 生产模型：Qwen SSE、CosyVoice3、MuseTalk 1.5。宿主机CUDA服务保持私有，仅必要后台网关对外；开发Compose端口不代表生产开放策略。
 
 ## 快速开始
+
+以下是通用本地/历史管线启动步骤。生产CUDA流式链路请按[独立部署说明](docs/cosyvoice-musetalk-live.md)操作，不要向已有模型环境同步全部依赖组。
 
 ### 0. 前置依赖
 
@@ -360,7 +370,7 @@ WAV2LIP_PROVIDER=rocm    # ROCm EP 不支持 LSTM 时会自动逐算子回退 CP
 ### 实时直播
 
 **Live Studio**：开启直播后数字人进入常驻推流（闲置态播放所选场景的全部视频，定时
-N 秒或随机切换）；观众端发消息走 **DeepSeek LLM** 回复并开口说话。「默认推流视频」
+N 秒或随机切换）；当前生产观众消息走 **Qwen SSE → CosyVoice3 → MuseTalk** 回复并开口说话。「默认推流视频」
 选择闲置画面来自哪个场景及切换方式，「字幕设置」按数字人配置字幕
 （开关/字体/位置/边框/字号，字体放 `worker/fonts/`）。
 

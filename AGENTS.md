@@ -3,39 +3,33 @@
 本文档供 AI Agent 或开发者在**新设备上 clone 本仓库后**快速理解现状并继续开发。
 完整的上手步骤见 [README.md](./README.md)。
 
-## 1. 项目是什么
+## 当前技术栈（2026-11-01 文档核对）
 
-端到端口播数字人平台：管理后台上传形象图片 + 选择 Edge-TTS 音色创建数字人，后台用
-**LivePortrait 预处理生成基础视频 + Edge-TTS 语音 + Wav2Lip(ONNX) 口型合成**生成
-带声音的说话视频。
+当前生产直播为 **Qwen SSE 分句 → CosyVoice3 流式音频 → MuseTalk 1.5 逐帧口型 → 常驻 FFmpeg → SRS HTTP-FLV / 外部 RTMP**。手动口播原文直说，不经LLM。旧版 Edge-TTS/Wav2Lip、IndexTTS/LatentSync 保留在代码中用于离线、对照或回退，不是当前直播主链路。
 
-## 2. 当前技术栈（已落地，勿按旧文档改回）
+| 层 | 当前实现 |
+| --- | --- |
+| 管理端 | React 19、TypeScript、Vite 8、Tailwind CSS 4、shadcn/ui、TanStack Router/Query，pnpm 10.25 |
+| 观众端 | 独立 Next.js 16 / React 19，xgplayer + HTTP-FLV |
+| API | Go 1.25、Gin、GORM、AWS S3 SDK v2；admin/live/telegram/web/scheduler 多入口 |
+| 数据与存储 | MariaDB 11、Redis 8.2、RustFS（S3兼容）；RAG为 FastAPI + zvec/Jieba |
+| 直播 Worker | 宿主机原生 Python + uv、Redis、boto3、FFmpeg；`worker/.python-version` 为3.12，项目允许>=3.11,<3.14；模型使用独立环境 |
+| LLM与模型 | OpenAI兼容 Qwen Chat Completions SSE、常驻 CosyVoice3 / MuseTalk 1.5，Linux NVIDIA CUDA |
+| 互动采集 | Chrome MV3 插件，用户手动打开直播页后读取DOM，上报后台；不启用旧Playwright采集 |
 
-- 前端：React + TypeScript + Vite + Tailwind + shadcn/ui（基于 satnaing/shadcn-admin），
-  pnpm 10.25.0 管理，`frontend/admin/`（BFF 多客户端矩阵：`admin/live/web/telegram`）。
-- 后端：Go + Gin + GORM，`backend/`（模型、S3、Redis、handlers 分为 admin/live/telegram/web）。
-- AI Worker：Python **3.11**（`worker/.python-version`），uv 管理依赖（`pyproject.toml`
-  + `uv.lock`），**不要使用 requirements.txt**。
-- 存储：S3 兼容对象存储（RustFS，Docker Compose 内运行）；Go 用 `aws-sdk-go-v2`，
-  Python 用 boto3；服务间只传 S3 Key，不用本地路径。
-- 基础设施：Docker Compose；**MariaDB 11** + **Redis 8.2.2-alpine** + RustFS
-  + **service-rag**（本地 RAG 微服务：zvec 全文索引 + Jieba 中文分词，
-  Docker 内 `services/rag/`，端口 8001，零模型依赖）+ **service-tts**
-  （Edge-TTS 微服务：async edge-tts → 16kHz PCM WAV → S3，`services/tts/`，
-  端口 8002，S3 共享存储，媒体不过 HTTP）+ **docs**（API 文档网关：nginx
-  聚合各 HTTP 微服务的 Swagger/OpenAPI，经管理端 `:8080/doc/<prefix>` 访问）。
-- 部署模式：Docker 里跑基础设施 + API + 前端 + 轻量 Mock Worker；**真实 AI Worker
-  在宿主机原生运行**：macOS Apple Silicon（MPS/CoreML）、Linux NVIDIA CUDA、
-  Linux **AMD ROCm**（RX 6800 XT 等 RDNA2，见 README 对应章节）。宿主机仅开放
-  必要端口：3000（观众端）/ 8080（管理端）/ 1935（RTMP 推流）/ 6379（Redis）/
-  9000（RustFS）；`api-admin`/`api-live`/`api-telegram`/`api-web`/`api-scheduler`、`service-rag`、
-  `service-tts` 均在内网，不发布端口。
-- 依赖组（`worker/pyproject.toml`）：`models`（macOS 默认）、`cuda`、
-  `rocm`（仅 `onnxruntime-rocm`，torch 用官方 ROCm 镜像或手动装）——cuda/rocm
-  互斥，Linux 用 `--no-group` 二选一；ROCm 容器里 `uv sync` 必须加 `--inexact`
-  保留镜像预装的 torch。
+详细发布步骤见[流式直播](docs/cosyvoice-musetalk-live.md)；换装与分造型缓存见[换装](docs/wardrobe.md)。服务地址及认证只从私有环境文件读取，不提交部署地址、密钥、采集记录或运行素材。
 
-## 3. 当前实现状态
+## 生产操作边界
+
+- 运行端口、GPU、模型就绪情况以私有配置和当前服务状态核对，不把历史发布记录当成实时状态。
+- 手动口播 → 礼物感谢 → 点赞感谢 → 评论回复 → 欢迎 → 自主主持；不硬中断当前短段。
+- ID3新酒红/香槟使用独立换装副本；白衣继续原服务。造型底片、profile、S3 Key和缓存必须绑定，不能只替换idle。
+- 只更新文档时不构建镜像、不重启服务；业务更新仅部署相关服务，模型重启需明确授权。
+- 禁止提交部署地址、认证值、私有环境文件、运行素材或真实观众事件。
+
+## 3. 功能目录（含历史实现）
+
+本节保留离线及旧引擎实现记录；涉及直播引擎、LLM、采集方式和公网端口时，以上方当前技术栈与专用runbook为准。
 
 - ✅ Avatar Studio（创建）：形象名称/头像展示/图片/Edge-TTS 音色（localStorage 缓存，
   默认 zh-CN-XiaoxiaoNeural）+ 人物设定（年龄/身高/体重/族裔/感情状态/性格）。
@@ -300,7 +294,9 @@ uv run python -u worker.py          # 真实管线，AI_MODE=real
 模型快速迁移（免重新下载 ~4GB）：把旧设备的 `worker/models/` 和
 `worker/external/` 整个目录拷到新设备对应位置即可，脚本会跳过已存在文件。
 
-## 7. 已知坑（务必先读）
+## 7. 排障与历史发布记录
+
+按日期阅读；2026-10-28的IndexTTS/LatentSync及Playwright记录不代表当前生产配置。
 
 - **版本化发布与自然语音切段（更新）**：本地测试 → git commit/push → 成都 git pull --ff-only → bash deploy/chengdu.sh；根 Compose + deploy/chengdu.override.yml 是当前部署入口，不再用迁移时的私有 compose.json。镜像标签与 runtime/deployed-revision 记录 SHA。直接口播完整任务一次 TTS，再由 ai/speech_segments.py 按停顿切音频、逐片生成即播；不再固定 50 字切稿。细节见 docs/chengdu-deployment.md。
 

@@ -6,15 +6,29 @@
 
 <p align="center"><a href="README.md">English</a> | <a href="README-zh.md">简体中文</a></p>
 
-End-to-end AI digital-human live-streaming platform: create a digital human (appearance +
-voice + persona) → LivePortrait generates a base video → **Edge-TTS speech + Wav2Lip
-lip-sync** → **DeepSeek LLM real-time replies** → SRS live streaming.
+AI digital-human live streaming with prepared avatar videos, voice cloning, live interaction and autonomous hosting.
 
-Admin console `:8080` · Viewer app `:3000` · [Architecture doc](docs/技术需求与架构文档.md) ·
-[Roadmap / TODO](docs/TODO.md) · [Development handoff](AGENTS.md) ·
-[Documentation site](https://taochangle.github.io/LingCast/)
+[Architecture](docs/技术需求与架构文档.md) · [Development handoff](AGENTS.md) · [中文](README-zh.md)
 
-Current Chengdu deployment: **Qwen streaming → CosyVoice → MuseTalk**, with Chrome DOM collection. Playback priority: manual speech → comment replies → welcomes → autonomous hosting. See [live pipeline](docs/cosyvoice-musetalk-live.md) and [Chrome collector](docs/chrome-collector.md). The general setup below also documents the older engines.
+## Current stack (documentation checked 2026-11-01)
+
+The production live path is **Qwen sentence SSE → CosyVoice3 streaming audio → MuseTalk 1.5 frames → persistent FFmpeg → SRS HTTP-FLV / external RTMP**. Manual speech is spoken verbatim without the LLM. Edge-TTS/Wav2Lip and IndexTTS/LatentSync remain available for legacy workflows, comparisons or rollback; they are not the current live path.
+
+| Layer | Implementation |
+| --- | --- |
+| Admin | React 19, TypeScript, Vite 8, Tailwind CSS 4, shadcn/ui, TanStack Router/Query, pnpm 10.25 |
+| Viewer | Standalone Next.js 16 / React 19, xgplayer HTTP-FLV |
+| API | Go 1.25, Gin, GORM, AWS S3 SDK v2; admin/live/telegram/web/scheduler entry points |
+| Data | MariaDB 11, Redis 8.2, RustFS S3; FastAPI + zvec/Jieba RAG |
+| Worker | Native Python + uv, Redis, boto3, FFmpeg; pinned Python 3.12, project supports >=3.11,<3.14; model environments are separate |
+| Models | OpenAI-compatible Qwen Chat Completions SSE, resident CosyVoice3 / MuseTalk 1.5, Linux NVIDIA CUDA |
+| Collection | User-started Chrome MV3 DOM collector; the legacy Playwright collector stays disabled |
+
+Priority: manual speech → gift thanks → like thanks → comment replies → welcomes → autonomous hosting. Current speech finishes before the next task. Programme requests use fixed scripts; wardrobe transitions use prepared media and appearance-specific caches.
+
+Only the admin gateway is publicly exposed in the production deployment; model, storage, queue and ingest endpoints stay internal or on loopback. Local Compose development ports are not a production exposure policy. Configure origins and credentials in private environment files.
+
+See [live pipeline](docs/cosyvoice-musetalk-live.md), [collector](docs/chrome-collector.md) and [wardrobe/cache rollout](docs/wardrobe.md). The setup below includes legacy offline engines; do not use it to replace the production streaming deployment.
 
 # Contents
 
@@ -33,6 +47,8 @@ Current Chengdu deployment: **Qwen streaming → CosyVoice → MuseTalk**, with 
 
 ## Why
 
+The GPU-free statements below refer to the legacy ONNX path; current production streaming uses NVIDIA CUDA.
+
 Traditional talking-head / live-streaming solutions either depend on expensive closed-source
 APIs or require high-end GPUs and complex voice-cloning pipelines. LingCast aims for:
 
@@ -45,6 +61,8 @@ APIs or require high-end GPUs and complex voice-cloning pipelines. LingCast aims
   Worker runs natively on the host (macOS MPS / Linux CUDA / AMD ROCm).
 
 ## Features
+
+The catalogue below includes legacy offline capabilities. The production live stack is described above.
 
 - [x] **Avatar Studio (create)**: persona name + preview + image upload + Edge-TTS voice picker
   (list cached in `localStorage`, default Chinese female voice Xiaoxiao), optional **persona
@@ -212,6 +230,8 @@ disable with `FACE_ENHANCER=off`):
 
 ## Architecture
 
+Production: Chrome DOM events → Go API/Qwen SSE → Redis → native Worker → CosyVoice3/MuseTalk PCM+JPEG → FFmpeg/SRS. The diagram below describes the general platform and legacy offline path.
+
 ```text
 Admin console :8080 ──> Nginx (frontend)
   ├── /api    ──> api-admin (Gin) ──> MariaDB 11 / Redis 8.2 / RustFS / service-rag
@@ -236,21 +256,14 @@ service-tts ──> async edge-tts → 16kHz PCM WAV → S3 (RustFS)
   theme by default, switchable to light; requires admin login).
 - Viewer frontend: standalone Next.js 16 + TailwindCSS 4 (`frontend/live/`, light/dark themes,
   no login required).
-- Backend: Go + Gin + GORM split into three microservices sharing one module —
-  `api-admin` (management console, :8081), `api-live` (audience/live chat,
-  :8082) and `api-scheduler` (worker webhooks, :8083); standard AWS S3 SDK v2.
-- AI Worker: Python 3.11, uv-managed dependencies, boto3 + Redis.
-- Knowledge microservice: `service-rag` (FastAPI + uv + zvec FTS, Jieba tokenizer,
-  zero model dependencies, internal :8001, data persisted in the `rag-zvec-data` volume).
-- Storage: S3-compatible object storage (RustFS in dev).
-- Deployment: Docker Compose orchestrates the infrastructure and frontends; **the real AI
-  Worker runs natively on the host** (MPS/CoreML on macOS Apple Silicon, NVIDIA CUDA or AMD
-  ROCm on Linux). Host-published ports are limited to what the host worker and
-  the web apps need: **3000** (viewer), **8080** (admin/API), **1935** (RTMP ingest),
-  **6379** (Redis) and **9000** (RustFS). `api-admin`, `api-live`,
-  `api-scheduler`, `service-rag` and `service-tts` stay on the internal network.
+- Backend: Go 1.25 + Gin + GORM, with admin/live/telegram/web/scheduler entry points and AWS S3 SDK v2.
+- Worker: Python 3.12 (project constraint >=3.11,<3.14), uv, boto3, Redis and FFmpeg; resident models use separate environments.
+- Data: MariaDB 11, Redis 8.2, RustFS S3 and FastAPI/zvec/Jieba RAG.
+- Production models: Qwen SSE, CosyVoice3 and MuseTalk 1.5. Native CUDA model services stay private; only the necessary admin gateway is public. Development Compose ports are not production exposure guidance.
 
 ## Quick Start
+
+These instructions cover the general local/legacy pipeline. For the current CUDA streaming deployment, follow [the production runbook](docs/cosyvoice-musetalk-live.md). Do not synchronize all dependency groups into existing model environments.
 
 ### 0. Prerequisites
 
@@ -404,7 +417,7 @@ audio.
 
 **Live Studio**: after starting a live stream the digital human pushes a persistent stream
 (idle state plays the chosen scene videos, switching every N seconds or randomly); viewer
-messages go through the **DeepSeek LLM** and are spoken aloud. "Default stream video" picks
+messages in the current production deployment go through **Qwen SSE → CosyVoice3 → MuseTalk** and are spoken aloud. "Default stream video" picks
 which scene drives the idle picture and how it switches; "Subtitle settings" configure
 on/off, font, position, border and size per digital human (fonts live in `worker/fonts/`).
 
