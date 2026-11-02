@@ -1,5 +1,7 @@
 # IndexTTS + LatentSync 常驻互动链路
 
+> 历史方案/实验记录，保留当时的参数和结果。当前直播以[流式链路](cosyvoice-musetalk-live.md)及[Chrome采集](chrome-collector.md)为准；不要将下述旧引擎、浏览器自动化或耗时当作现行部署指令。
+
 2026-10-28 已用原默认 IT 女主持人跑通本地实际 RTMP 输出：
 
 `聊天 → Qwen → Redis → 常驻 IndexTTS → S3 → 常驻 LatentSync → S3 → 完整片段预加载 → 自动插播 → 待机`

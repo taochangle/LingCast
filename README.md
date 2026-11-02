@@ -26,6 +26,25 @@ AI digital-human live streaming with voice cloning, audience interaction, autono
 
 The extension only reads the DOM of a page the user opens and explicitly starts collecting. It never posts platform comments. Collection is limited to information actually displayed; accurate gift names and complete viewer identities are not guaranteed.
 
+## Screenshots
+
+Actual interface images and a wardrobe demo frame from the 2026-10-30 project demonstration. These are recorded views, not evidence of today's running service state. Text within a screenshot may predate the current preparation or credential lifecycle; the code-backed documentation below takes precedence.
+
+![Avatar library](docs/images/current/avatar-library.jpg)
+
+| Scenes and source videos | GitHub project reader |
+| --- | --- |
+| ![Scenes](docs/images/current/scenes.jpg) | ![Project reader](docs/images/current/project-reader.png) |
+
+<details>
+<summary>Ruotang wardrobe demo: burgundy outfit</summary>
+
+<img src="docs/images/current/wardrobe-burgundy.jpg" alt="Burgundy outfit, frame from the actual wardrobe demo" width="288">
+
+</details>
+
+Image provenance and selection: [screenshot notes](docs/images/current/README.md).
+
 ## Current stack
 
 | Layer | Implementation |
@@ -103,7 +122,7 @@ Run the same commands in `frontend/live/` for the viewer app. Backend tests run 
 | `S3_*` / `REDIS_*` | Media storage and queues; follow each process's configuration format |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial administrator configuration; use a unique strong password |
 
-Keep deployment endpoints, credentials and external stream keys in private configuration. Do not commit `.env` files, packaged extension ZIPs, real collector events, runtime logs, model weights or media assets. The admin generates time-limited collection credentials per avatar; they can be regenerated or revoked. There is no shared default collection password.
+Keep deployment endpoints, credentials and external stream keys in private configuration. Do not commit `.env` files, packaged extension ZIPs, real collector events, runtime logs, model weights or media assets. The admin generates revocable collection credentials per avatar (no automatic expiry in the current implementation); they can be regenerated or revoked. There is no shared default collection password.
 
 Audience input passes prompt-injection and content filters, but this is not a guarantee for every output. Manual speech is played verbatim and requires operator review. See [prompt guard](docs/live-prompt-guard.md).
 

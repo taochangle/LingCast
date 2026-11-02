@@ -1,5 +1,7 @@
 # Qwen 与现有数字人接入（2026-10-28）
 
+> 历史方案/实验记录，保留当时的参数和结果。当前直播以[流式链路](cosyvoice-musetalk-live.md)及[Chrome采集](chrome-collector.md)为准；不要将下述旧引擎、浏览器自动化或耗时当作现行部署指令。
+
 后续已完成 IndexTTS + LatentSync 常驻互动接入，当前运行与恢复方式见 [resident-live.md](resident-live.md)。本文下方保留首次对比的历史测量与当时边界。
 
 本次沿用 LingCast 的 API、数据库、Redis、S3 与场景视频结构。未接入小红书弹幕，未启动对外直播。

@@ -1,4 +1,4 @@
-# Chrome 插件采集（2026-10-29 更新）
+# Chrome 插件采集（2026-11-02 代码核对）
 
 取代浏览器自动化采集：用户在正常 Chrome 中手动打开本场小红书直播页、点击插件开始，隔离世界 content script 使用 MutationObserver 读新增 DOM，service worker 作为客户端将结构化事件推到同一个 59480 后台。没有 Playwright 运行时、浏览器远程调试端口或平台内部接口请求。原采集服务继续禁用；旧 Collector 遇到 client=extension 的配置会跳过，不会打开第二个浏览器。
 
@@ -6,7 +6,7 @@
 
 ## 协议和边界
 
-- 管理员POST `/api/live/:avatarID/collector-token`生成每个数字人独立的32字节随机Bearer密钥，只在生成响应中返回原文，Redis只保存哈希；重新生成使旧密钥失效。DELETE撤销。插件不包含任何默认口令；密钥手动填写一次并保存在插件本地，不给content script，不进入下载包。
+- 管理员POST `/api/live/:avatarID/collector-token`生成每个数字人独立的32字节随机Bearer密钥，只在生成响应中返回原文，Redis只保存哈希；当前写入Redis不设TTL，生成响应`expires_ms=0`，不会自动过期；重新生成使旧密钥失效，DELETE撤销。插件不包含任何默认口令；密钥手动填写一次并保存在插件本地，不给content script，不进入下载包。
 - 插件 Bearer POST `/api/collector/session`，action=start/stop；start 传正式房间 URL、welcome/reply 开关（插件默认均为 false），返回 revision、server_ms、规范化房间 URL。换房间必须新建会话，刷新/关闭页面后需手动重新开始。
 - 插件 Bearer POST `/api/collector/events`，最多 20 条/32KiB，每 400ms 至多一批。数据为 id/kind/nickname/text/observed_ms，不含 Cookie、输入框、HTML、分享 token 或其他页面内容。后台从密钥决定 avatarId，不信任客户端指定的数字人。
 - 支持 enter/message/like/gift，事件过期 30 秒丢弃；客户端握手计算时钟偏差。服务端去重 id 与内容签名、流式模式欢迎和回复各最多2秒触发一次（旧版模式仍为60秒/12秒），评论与欢迎独立限量排队，欢迎排满不会阻止评论触发回复。关播时只展示，不生成口播。旧房间回复会通过现有 xhs_revision 校验失效。
@@ -18,7 +18,7 @@
 
 Node 测试覆盖权限声明、事件规范化、来源隔离、固定目标上报与刷新/关闭停止。独立 MariaDB + Redis 集成测试覆盖密钥散列、未认证请求、仅展示、重复事件、旧版本拒绝、欢迎冷却和撤销；CORS 单测验证管理员接口未对扩展放开。DOM fixture 验证首屏跳过、表情、进场、主播/点赞排除、节点复用和停止。2026-10-29 已在沈若棠（ID3）验证真实 DOM 进场、聊天上报、自动欢迎及 Qwen 流式回复口播；后续评论优先调整通过本地和服务器队列顺序测试。实际效果仍依赖当前页面、用户开关和队列容量。
 
-DOM 不是平台正式事件协议，页面结构变更、虚拟列表和后台标签页节流可能漏读；不承诺规避平台限制。HTTP 服务器链路不加密；未来 HTTPS 迁移需同步更新插件固定地址。
+DOM 不是平台正式事件协议，页面结构变更、虚拟列表和后台标签页节流可能漏读；不承诺规避平台限制。HTTP 服务器链路不加密；迁移HTTPS时需更新插件保存的可编辑服务器地址。
 
 ## 口播调度
 

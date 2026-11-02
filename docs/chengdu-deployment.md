@@ -1,12 +1,16 @@
 # 成都服务器部署（2026-10-29 更新）
 
-## 当前版本发布方式（取代迁移时的构建方式）
+## 按变更范围选择发布方式
+
+文档只做Git同步，不构建或重启；插件只重新打包/加载相关产物。API或前端变更只定向更新涉及服务。新造型应先独立准备素材与缓存，再按授权切换Worker；不要为普通更新运行全量脚本或重启模型。当前新造型副本/清单及回退见[换装v3](wardrobe.md)。以下全量流程仅用于明确需要的整体链路发布。
+
+## 整体链路发布（取代迁移时的构建方式）
 
 本地修改、测试后提交并推送 main；线上工作目录同为 Git 仓库，执行 `git pull --ff-only origin main`，再 `bash deploy/chengdu.sh`。脚本拒绝已修改的跟踪文件，从同一提交构建 API 和前端，并在镜像标签 `org.opencontainers.image.revision` 与 `runtime/deployed-revision` 记录提交号。构建全部通过后才切换服务并重启 Worker。
 
 部署入口已改为版本管理内的根 docker-compose.yml + deploy/chengdu.override.yml，项目名和数据卷继续用 lingcast-chengdu；私有 `.env`、worker/.env.local、模型 resident.env、数据库及素材不进 Git。迁移时的私有 compose.json 留作回退备份，后续不要混用它部署。模型服务源码也从当前 Git 提交安装，而非从本地手工传文件。
 
-当前直播链路为 Qwen SSE → CosyVoice音频流 → MuseTalk逐帧 → FFmpeg/SRS；手动口播按原文生成。优先级为手动口播 → 评论回复 → 欢迎 → 自主主持，评论和欢迎分别排队。常驻配置、素材映射、缓存与回滚见 [流式直播链路](cosyvoice-musetalk-live.md)。IndexTTS/LatentSync 保留作旧模式和回滚使用。
+当前直播链路为 Qwen SSE → CosyVoice音频流 → MuseTalk逐帧 → FFmpeg/SRS；手动口播按原文生成。优先级为手动口播 → 礼物感谢 → 点赞感谢 → 评论回复 → 欢迎 → 自主主持，评论和欢迎分别排队。常驻配置、素材映射、缓存与回滚见 [流式直播链路](cosyvoice-musetalk-live.md)。IndexTTS/LatentSync 保留作旧模式和回滚使用。
 
 真实公网origin仅保存在服务器私有 `.env` 的 `LINGCAST_PUBLIC_ORIGIN`，不写入仓库。宿主机本地调试可访问 `http://127.0.0.1:59480`。本机原实例已停止，数据卷和源码保留；恢复本机前先停远程 Worker，避免两套同时处理/推流。
 

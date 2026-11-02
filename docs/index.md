@@ -1,35 +1,33 @@
 ---
 layout: home
-
 hero:
   name: LingCast
-  text: 灵播 · 端到端口播数字人平台
-  tagline: LivePortrait 基础动画 + Edge-TTS 语音 + Wav2Lip(ONNX) 口型合成，支持离线视频生成与实时直播。
+  text: 灵播 · 互动数字人直播
+  tagline: Qwen流式回复 → CosyVoice3配音 → MuseTalk 1.5逐帧口型 → FFmpeg / SRS，支持手动口播、自主主持和换装。
   image:
     src: /images/logo.svg
     alt: LingCast
   actions:
     - theme: brand
-      text: 快速开始
+      text: 部署与准备
       link: /guide/start
     - theme: alt
-      text: API 文档
-      link: /guide/api
+      text: 当前功能
+      link: /guide/features
     - theme: alt
       text: GitHub
       link: https://github.com/taochangle/LingCast
-
 features:
-  - title: 数字人创建与管理
-    details: 形象图 + Edge-TTS 音色 + 人物设定，LivePortrait 自动生成 24fps 基础驱动视频（去眨眼、保留耸肩）。
-  - title: 离线视频生成
-    details: 脚本 → Edge-TTS → Wav2Lip(ONNX) 口型 → 成品 MP4，支持 CodeFormer 人脸修复。
-  - title: 实时直播
-    details: Watchdog 架构恒定 24fps 推流（SRS + RTMP/HTTP-FLV），队列空自动回退基础动画，播放不转圈。
-  - title: 知识库 RAG + 长期记忆
-    details: service-rag（zvec 全文索引）按数字人隔离检索 Top-3，注入 DeepSeek 回复，支持多轮上下文。
-  - title: 微服务化
-    details: api-admin / api-live / api-scheduler + service-rag / service-tts + RustFS 共享存储，文档经 Swagger 网关聚合。
-  - title: 多硬件支持
-    details: macOS Apple Silicon（MPS/CoreML）实测；Linux NVIDIA CUDA 与 AMD ROCm 路径已预留。
+  - title: 流式互动
+    details: Qwen完整短句入队，配音块与口型帧配对播放；手动口播原文直说。
+  - title: Chrome采集
+    details: 用户主动启动DOM只读采集，独立去重、限频、感谢与回复队列。
+  - title: 自主主持
+    details: 固定话术库或自定义一轮讲稿；首条就绪即可开讲，互动结束继续。
+  - title: 换装与缓存
+    details: 已准备造型按完整阶段换装，底片与口型身份绑定，重复话术复用音视频缓存。
+  - title: 管理与知识
+    details: React管理台、Next.js观众端、Go API、MariaDB、Redis、RustFS及zvec/Jieba检索。
+  - title: 部署边界
+    details: 当前GPU流式模型使用Linux NVIDIA CUDA及独立环境；只发布必要后台网关。
 ---

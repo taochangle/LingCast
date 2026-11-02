@@ -1,5 +1,7 @@
 # LatentSync 步数对比（2026-10-28）
 
+> 历史方案/实验记录，保留当时的参数和结果。当前直播以[流式链路](cosyvoice-musetalk-live.md)及[Chrome采集](chrome-collector.md)为准；不要将下述旧引擎、浏览器自动化或耗时当作现行部署指令。
+
 当前成都服务器默认已从 20 步调为 10 步，配置在 `/data1/taoxin/lingcast-resident/resident.env` 的 `LATENTSYNC_STEPS=10`，由 `lingcast-latentsync.service` 读取。源码保留 20 步兜底值；请求可用整数 `steps`（8–50）覆盖。未改变 guidance、分辨率或 seed。
 
 对比页：http://127.0.0.1:59480/media/talking-avatar/benchmarks/20261028-latentsync-steps/index.html

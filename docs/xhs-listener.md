@@ -1,5 +1,7 @@
 # 小红书互动采集
 
+> 历史方案/实验记录，保留当时的参数和结果。当前直播以[流式链路](cosyvoice-musetalk-live.md)及[Chrome采集](chrome-collector.md)为准；不要将下述旧引擎、浏览器自动化或耗时当作现行部署指令。
+
 当前生产使用用户本机 Chrome 插件，服务器负责 Qwen → CosyVoice → MuseTalk 及播放。操作、限频与队列说明以 [Chrome 插件采集](chrome-collector.md) 为准；插件服务器固定为后台59480。手动口播 → 评论回复 → 欢迎 → 自主主持，评论与欢迎独立排队。
 
 以下是保留的 Playwright 采集方案记录，当前已停用，不作为恢复生产的操作步骤。

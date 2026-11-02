@@ -1,6 +1,6 @@
 # 历史 README：旧引擎说明
 
-2026-11-01归档。保留旧能力与启动流程供追溯，不作为当前生产操作手册。文中的默认值、性能、端口、模型与部署说明可能过时；不要对运行中的流式部署执行这些命令。以[当前README](../../README-zh.md)与[流式生产手册](../cosyvoice-musetalk-live.md)为准。
+2026-11-01归档。保留旧能力与启动流程供追溯，不作为当前生产操作手册。文中的默认值、性能、端口、模型与部署说明可能过时；不要对运行中的流式部署执行这些命令。以[当前README](https://github.com/taochangle/LingCast/blob/main/README-zh.md)与[流式生产手册](../cosyvoice-musetalk-live.md)为准。
 
 ## 为什么做
 
@@ -203,7 +203,7 @@ docker compose up --build
 
 访问 <http://localhost:8080>，左侧菜单进入 **Avatar Studio**。
 
-> **Note**：管理后台需要登录后才能访问（默认 `admin` / `<configure-private-password>`，请在 `.env` 中
+> **Note**：管理后台需要登录后才能访问（默认 `admin` / `PRIVATE_PASSWORD`，请在 `.env` 中
 > 修改 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 并重启 API 容器）。观众端（:3000）不受
 > 影响，仍可直接进入直播间。
 
@@ -369,7 +369,7 @@ curl http://localhost:8080/api/live/9/status
 | `OPENAI_BASE_URL` | `.env` | LLM 端点（默认 `https://api.deepseek.com`） |
 | `OPENAI_API_KEY` | `.env` | DeepSeek API Key；不设则消息原样回读 |
 | `OPENAI_MODEL` | `.env` | Responses 模型（默认 `deepseek-v4-flash`） |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `.env` | 管理后台登录账号（默认 admin/<configure-private-password>） |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `.env` | 管理后台登录账号（默认 admin/PRIVATE_PASSWORD） |
 | `TG_BOT_TOKEN` | `.env` | Telegram 机器人 token（initData 校验 + webhook 注册） |
 | `TG_WEBHOOK_URL` / `TG_MINIAPP_URL` | `.env` | 生产固定地址（可选）；留空 = ngrok 发现 |
 | `NGROK_AUTHTOKEN` / `NGROK_API_URL` | `.env` | ngrok 认证 + agent API（默认 `http://ngrok:4040`） |
@@ -437,6 +437,6 @@ LingCast/
 ## 参与贡献
 
 - 架构与演进方向见 [docs/TODO.md](../../docs/TODO.md) 与 [架构文档](../../docs/技术需求与架构文档.md)。
-- 开发约定见 [AGENTS.md](../../AGENTS.md)（新设备快速上手、目录速览、已知坑）。
+- 开发约定见 [AGENTS.md](https://github.com/taochangle/LingCast/blob/main/AGENTS.md)（新设备快速上手、目录速览、已知坑）。
 - 提交信息沿用仓库现有风格：`feat:` / `fix:` / `docs:` / `refactor:` 前缀 + 中文或
   英文描述。

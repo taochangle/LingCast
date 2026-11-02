@@ -1,6 +1,6 @@
 # Historical README: legacy engines
 
-Archived on 2026-11-01. This is a historical capability/setup reference, not the current production runbook. Statements about defaults, performance, ports, models and deployment may be obsolete. Do not execute these commands against a running streaming deployment. See the [current README](../../README.md) and [production streaming runbook](../cosyvoice-musetalk-live.md).
+Archived on 2026-11-01. This is a historical capability/setup reference, not the current production runbook. Statements about defaults, performance, ports, models and deployment may be obsolete. Do not execute these commands against a running streaming deployment. See the [current README](https://github.com/taochangle/LingCast/blob/main/README.md) and [production streaming runbook](../cosyvoice-musetalk-live.md).
 
 ## Why
 
@@ -240,7 +240,7 @@ docker compose up --build
 
 Open <http://localhost:8080> and enter **Avatar Studio** from the left menu.
 
-> **Note**: the admin console requires login (default `admin` / `<configure-private-password>`; change
+> **Note**: the admin console requires login (default `admin` / `PRIVATE_PASSWORD`; change
 > `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env` and restart the API container). The viewer
 > app (:3000) is unaffected and can enter live rooms directly.
 
@@ -414,7 +414,7 @@ send messages directly; after registering/logging in, chat history follows the a
 | `OPENAI_BASE_URL` | `.env` | LLM endpoint (default `https://api.deepseek.com`) |
 | `OPENAI_API_KEY` | `.env` | DeepSeek API key; unset means the input is echoed back |
 | `OPENAI_MODEL` | `.env` | Responses model (default `deepseek-v4-flash`) |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `.env` | Admin console credentials (default admin/<configure-private-password>) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `.env` | Admin console credentials (default admin/PRIVATE_PASSWORD) |
 | `TG_BOT_TOKEN` | `.env` | Telegram bot token (initData HMAC + webhook registration) |
 | `TG_WEBHOOK_URL` / `TG_MINIAPP_URL` | `.env` | Production fixed URLs (optional); empty = ngrok discovery |
 | `NGROK_AUTHTOKEN` / `NGROK_API_URL` | `.env` | ngrok auth + agent API (default `http://ngrok:4040`) |
@@ -488,7 +488,7 @@ LingCast/
 
 - Architecture and evolution plans: [docs/TODO.md](../../docs/TODO.md) and the
   [architecture doc](../../docs/技术需求与架构文档.md).
-- Development conventions: [AGENTS.md](../../AGENTS.md) (quick onboarding, directory overview,
+- Development conventions: [AGENTS.md](https://github.com/taochangle/LingCast/blob/main/AGENTS.md) (quick onboarding, directory overview,
   known pitfalls).
 - Commit messages follow the repo style: `feat:` / `fix:` / `docs:` / `refactor:` prefixes
   with Chinese or English descriptions.
