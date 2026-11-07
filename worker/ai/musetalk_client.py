@@ -21,11 +21,13 @@ class StreamingSpeech:
 class MuseRenderer:
     def __init__(self, avatar_id):
         self.avatar_id = int(avatar_id)
-        self.url = os.environ.get('MUSETALK_WARDROBE_URL', os.environ['MUSETALK_RESIDENT_URL']).rstrip('/') if self.avatar_id in (3001, 3002, 3003) else os.environ['MUSETALK_RESIDENT_URL'].rstrip('/')
-        self.token = os.environ['RESIDENT_API_TOKEN']
+        default_url = os.environ.get('MUSETALK_RESIDENT_URL', 'http://127.0.0.1:59496')
+        self.url = os.environ.get('MUSETALK_WARDROBE_URL', default_url).rstrip('/') if self.avatar_id in (3001, 3002, 3003) else default_url.rstrip('/')
+        self.token = os.environ.get('MUSETALK_API_TOKEN') or os.environ['RESIDENT_API_TOKEN']
 
     def warmup(self, base_key):
-        response = requests.get(self.url+'/readyz', timeout=(5, 10))
+        headers = {'Authorization': 'Bearer '+self.token}
+        response = requests.get(self.url+'/readyz', headers=headers, timeout=(5, 10), allow_redirects=False)
         response.raise_for_status()
         data = response.json()
         if not data.get('ready') or data.get('avatars', {}).get(str(self.avatar_id), {}).get('base_key') != base_key:
@@ -34,7 +36,7 @@ class MuseRenderer:
         wardrobe_url = os.environ.get('MUSETALK_WARDROBE_URL')
         if self.avatar_id == 3 and wardrobe_url:
             try:
-                response = requests.get(wardrobe_url.rstrip('/')+'/readyz', timeout=(5, 10))
+                response = requests.get(wardrobe_url.rstrip('/')+'/readyz', headers=headers, timeout=(5, 10), allow_redirects=False)
                 response.raise_for_status()
                 appearance = response.json()
                 if appearance.get('ready'):
@@ -46,7 +48,7 @@ class MuseRenderer:
         response = None
         for attempt in range(60):
             response = requests.post(self.url+'/render', json={'avatar_id': self.avatar_id, 'text': text, 'base_key': base_key},
-                headers={'Authorization': 'Bearer '+self.token}, stream=True, timeout=(5, 90))
+                headers={'Authorization': 'Bearer '+self.token}, stream=True, timeout=(5, 90), allow_redirects=False)
             if response.status_code != 503:
                 break
             response.close()

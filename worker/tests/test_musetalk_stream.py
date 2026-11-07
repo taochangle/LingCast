@@ -70,6 +70,24 @@ class StreamTests(unittest.TestCase):
         finally:
             self.service.busy.release()
 
+    def test_remote_speech_without_stable_identity_does_not_reuse_cache(self):
+        audio = lambda *_: iter([(np.ones(960, dtype=np.float32)*.1, np.zeros(960), 0, 24000)])
+        with patch.object(self.service, 'CACHE_ENABLED', False), patch.object(self.service, 'windows', side_effect=audio):
+            renderer = MuseRenderer(2)
+            first = list(renderer.events('你好。', self.base))
+            second = list(renderer.events('你好。', self.base))
+        self.assertFalse(first[0]['cache_hit'])
+        self.assertFalse(second[0]['cache_hit'])
+        self.assertEqual(self.calls, 2)
+        self.assertEqual(list(self.service.CACHE.glob('*.ndjson.gz')), [])
+
+    def test_remote_fingerprint_does_not_require_local_speech_files(self):
+        with patch.object(self.service, 'REMOTE_COSY', True), patch.object(self.service, 'COSY_CACHE_ID', 'voice-version-1'):
+            first = self.service.compute_fingerprint()
+        with patch.object(self.service, 'REMOTE_COSY', True), patch.object(self.service, 'COSY_CACHE_ID', 'voice-version-2'):
+            second = self.service.compute_fingerprint()
+        self.assertNotEqual(first, second)
+
     def test_reject_wrong_material_and_untrusted_browser(self):
         renderer = MuseRenderer(2)
         with self.assertRaises(RuntimeError):renderer.warmup('wrong-face')

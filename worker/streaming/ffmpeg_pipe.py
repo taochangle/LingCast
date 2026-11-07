@@ -5,11 +5,12 @@ to SRS without writing an MP4. We start a single ffmpeg process with two
 inputs:
 
   - video: `-f rawvideo -pix_fmt bgr24 -s WxH -r FPS -i pipe:0`
-  - audio: `-f s16le -ar 16000 -ac 1 -i /dev/fd/<fd>`
+  - audio: 16kHz mono PCM via `/dev/fd/<fd>` on POSIX, or a
+    loopback TCP input on Windows.
 
-The audio input is passed through `pass_fds` as file descriptor 3 and ffmpeg
-opens it via `/dev/fd/3` (works on both macOS and Linux). Two rules avoid pipe
-deadlocks:
+On POSIX the audio read descriptor is inherited by FFmpeg. On Windows a
+bounded queue lets the producer continue until FFmpeg opens its second input.
+Two rules avoid pipe deadlocks:
 
   - ffmpeg waits for the first packet of EVERY input before consuming, so the
     first audio slice must be written before the first video frame.
@@ -30,7 +31,13 @@ the moment the ready queue is empty, so ffmpeg's video input never goes quiet.
 
 import logging
 import os
+import queue
+import socket
 import subprocess
+import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -41,6 +48,92 @@ _AUDIO_WRITE_CHUNK = 4096
 
 class FFmpegPipeClosedError(OSError):
     """Raised when writing to a pipe whose ffmpeg process has exited."""
+
+
+def _use_windows_audio():
+    return sys.platform == 'win32'
+
+
+class _SocketAudio:
+    """Buffer audio until FFmpeg opens its second input on Windows."""
+
+    def __init__(self):
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.bind(('127.0.0.1', 0))
+        self.listener.listen(1)
+        self.listener.settimeout(0.25)
+        self.url = f'tcp://127.0.0.1:{self.listener.getsockname()[1]}'
+        self.items = queue.Queue(maxsize=64)
+        self.failure = None
+        self.closed = threading.Event()
+        self.connection = None
+        self.thread = None
+
+    def start(self):
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        try:
+            while not self.closed.is_set():
+                try:
+                    self.connection, _ = self.listener.accept()
+                    break
+                except socket.timeout:
+                    continue
+            if self.connection is None:
+                return
+            self.connection.settimeout(5)
+            while not self.closed.is_set():
+                item = self.items.get()
+                if item is None:
+                    break
+                self.connection.sendall(item)
+        except OSError as error:
+            if not self.closed.is_set():
+                self.failure = error
+        finally:
+            if self.connection is not None:
+                self.connection.close()
+            self.listener.close()
+
+    def put(self, item, check_alive, timeout=10):
+        deadline = time.monotonic() + timeout
+        while True:
+            check_alive()
+            if self.failure:
+                raise FFmpegPipeClosedError('Windows audio transport failed') from self.failure
+            if self.closed.is_set():
+                raise FFmpegPipeClosedError('Windows audio transport closed')
+            try:
+                self.items.put(item, timeout=min(0.25, max(0, deadline-time.monotonic())))
+                return
+            except queue.Full:
+                if time.monotonic() >= deadline:
+                    raise FFmpegPipeClosedError('Windows audio transport timed out')
+
+    def close(self, check_alive, timeout):
+        try:
+            self.put(None, check_alive, timeout=timeout)
+            if self.thread:
+                self.thread.join(timeout)
+        finally:
+            self.abort()
+
+    def abort(self):
+        self.closed.set()
+        try:
+            self.items.put_nowait(None)
+        except queue.Full:
+            pass
+        if self.connection is not None:
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        self.listener.close()
+        if self.thread:
+            self.thread.join(1)
 
 
 class FFmpegPipe:
@@ -67,21 +160,23 @@ class FFmpegPipe:
             "STREAM_RTMP_URL", "rtmp://localhost:1935/live/{stream_id}"
         ).format(stream_id=stream_id)
         self.ffmpeg_bin = ffmpeg_bin
-        self.log_path = log_path or Path(
-            os.environ.get("STREAM_FFMPEG_LOG", f"/tmp/ffmpeg_{stream_id}.log")
-        )
+        default_log = Path(tempfile.gettempdir()) / f'ffmpeg_{stream_id}.log' if _use_windows_audio() else Path(f'/tmp/ffmpeg_{stream_id}.log')
+        self.log_path = log_path or Path(os.environ.get('STREAM_FFMPEG_LOG', str(default_log)))
         self.proc: subprocess.Popen | None = None
         self._audio_fd: int | None = None
+        self._socket_audio: _SocketAudio | None = None
 
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
     def start(self) -> None:
-        """Launch ffmpeg. Video arrives on stdin; audio on fd 3."""
+        """Launch FFmpeg with video on stdin and a separate audio input."""
         if self.proc is not None:
             return
 
-        audio_r, audio_w = os.pipe()
+        use_socket = _use_windows_audio()
+        audio_r, audio_w = (None, None) if use_socket else os.pipe()
+        audio_socket = _SocketAudio() if use_socket else None
         cmd = [
             self.ffmpeg_bin,
             "-y",
@@ -96,7 +191,7 @@ class FFmpegPipe:
             "-f", "s16le",
             "-ar", str(AUDIO_SAMPLE_RATE),
             "-ac", "1",
-            "-i", f"/dev/fd/{audio_r}",
+            "-i", audio_socket.url if audio_socket else f"/dev/fd/{audio_r}",
         ]
         cmd += [
             "-c:v", "libx264",
@@ -113,15 +208,26 @@ class FFmpegPipe:
         ]
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         log_file = open(self.log_path, "wb")
-        self.proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=log_file,
-            pass_fds=(audio_r,),
-        )
-        os.close(audio_r)
-        self._audio_fd = audio_w
+        try:
+            self.proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log_file,
+                **({} if use_socket else {'pass_fds': (audio_r,)}),
+            )
+        except BaseException:
+            if audio_socket:
+                audio_socket.listener.close()
+            else:
+                os.close(audio_r)
+                os.close(audio_w)
+            raise
+        finally:
+            log_file.close()
+        if audio_socket:
+            self._socket_audio = audio_socket
+            audio_socket.start()
+        else:
+            os.close(audio_r)
+            self._audio_fd = audio_w
         logger.info(
             "ffmpeg pipe started for stream %s -> %s (log %s)",
             self.stream_id,
@@ -158,7 +264,7 @@ class FFmpegPipe:
     def write_audio(self, pcm16_bytes: bytes) -> None:
         """Write mono 16kHz s16le PCM in small pieces to avoid pipe deadlocks."""
         self._check_alive()
-        if self._audio_fd is None:
+        if self._audio_fd is None and self._socket_audio is None:
             raise FFmpegPipeClosedError(
                 f"audio pipe for stream {self.stream_id} was never started"
             )
@@ -166,6 +272,11 @@ class FFmpegPipe:
             view = memoryview(pcm16_bytes)
             pos = 0
             while pos < len(view):
+                if self._socket_audio is not None:
+                    chunk = bytes(view[pos : pos + _AUDIO_WRITE_CHUNK])
+                    self._socket_audio.put(chunk, self._check_alive)
+                    pos += len(chunk)
+                    continue
                 written = os.write(
                     self._audio_fd, view[pos : pos + _AUDIO_WRITE_CHUNK]
                 )
@@ -186,11 +297,26 @@ class FFmpegPipe:
         code = 1
         try:
             if self.proc is not None and self.proc.stdin:
-                self.proc.stdin.close()
+                try:
+                    self.proc.stdin.close()
+                except OSError:
+                    pass
+            if self._socket_audio is not None:
+                if self.proc is None or self.proc.poll() is not None:
+                    self._socket_audio.abort()
+                else:
+                    try:
+                        self._socket_audio.close(self._check_alive, timeout)
+                    except FFmpegPipeClosedError:
+                        self._socket_audio.abort()
             if self._audio_fd is not None:
                 os.close(self._audio_fd)
             if self.proc is not None:
-                code = self.proc.wait(timeout=timeout)
+                try:
+                    code = self.proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    code = self.proc.wait(timeout=timeout)
                 if code != 0:
                     logger.error(
                         "ffmpeg exited with %s for stream %s (see %s)",
@@ -201,4 +327,5 @@ class FFmpegPipe:
         finally:
             self.proc = None
             self._audio_fd = None
+            self._socket_audio = None
         return code

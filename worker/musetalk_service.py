@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 import cv2
 import numpy as np
@@ -22,11 +23,19 @@ import soundfile as sf
 from scipy.signal import resample_poly
 from ai.audio_windows import AudioWindows
 
+def speech_is_remote(url, force_remote=False):
+    return force_remote or urlsplit(url).hostname not in ('localhost', '127.0.0.1', '::1')
+
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get('MUSETALK_ROOT', '/data1/taoxin/lingcast-musetalk-bench'))
 AVATARS = json.loads((HERE.parent/'deploy/musetalk-avatars.json').read_text())
-TOKEN = os.environ['RESIDENT_API_TOKEN']
-COSY = os.environ.get('COSYVOICE_URL', 'http://127.0.0.1:59495')
+TOKEN = os.environ.get('MUSETALK_API_TOKEN') or os.environ['RESIDENT_API_TOKEN']
+COSY = os.environ.get('COSYVOICE_URL', 'http://127.0.0.1:59495').rstrip('/')
+COSY_TOKEN = os.environ.get('COSYVOICE_API_TOKEN', '')
+COSY_ROOT = Path(os.environ.get('COSYVOICE_ROOT', '/data1/taoxin/lingcast-cosyvoice-bench'))
+COSY_CACHE_ID = os.environ.get('COSYVOICE_CACHE_ID', '').strip()
+REMOTE_COSY = speech_is_remote(COSY, os.environ.get('COSYVOICE_REMOTE', '').lower() in ('1', 'true', 'yes'))
+CACHE_ENABLED = not REMOTE_COSY or bool(COSY_CACHE_ID)
 CACHE = ROOT/'production-cache'
 CACHE.mkdir(exist_ok=True)
 busy = threading.Lock()
@@ -34,19 +43,24 @@ model = None
 failure = None
 fingerprint = None
 
+def compute_fingerprint():
+    paths = [Path(__file__), HERE/'ai/musetalk_runtime.py', HERE/'ai/audio_windows.py']
+    weights = list((ROOT/'source/models').rglob('*.pth'))
+    if not REMOTE_COSY:
+        paths += [HERE/'cosyvoice_service.py', COSY_ROOT/'prompt.wav', COSY_ROOT/'prompt.txt']
+        weights += list((COSY_ROOT/'model').rglob('*.pt'))
+    identity = [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]
+    identity += [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in sorted(weights)]
+    if REMOTE_COSY:
+        identity += ['remote-speech', hashlib.sha256(COSY.encode()).hexdigest(), COSY_CACHE_ID]
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+
 def load():
     global model, failure, fingerprint
     try:
         from ai.musetalk_runtime import StreamingMuse
         instance = StreamingMuse()
-        # Fingerprint model code, reference conditions and checkpoint metadata.
-        paths = [Path(__file__), HERE/'ai/musetalk_runtime.py', HERE/'ai/audio_windows.py',
-                 HERE/'cosyvoice_service.py', Path('/data1/taoxin/lingcast-cosyvoice-bench/prompt.wav'),
-                 Path('/data1/taoxin/lingcast-cosyvoice-bench/prompt.txt')]
-        weights = list((ROOT/'source/models').rglob('*.pth')) + list((Path('/data1/taoxin/lingcast-cosyvoice-bench/model')).rglob('*.pt'))
-        identity = [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]
-        identity += [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in sorted(weights)]
-        fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+        fingerprint = compute_fingerprint()
         model = instance
     except Exception as error:
         failure = type(error).__name__
@@ -82,7 +96,9 @@ def windows(text, stop):
         try:
             assembler = None
             finished = False
-            with requests.post(COSY+'/speech', json={'text': text}, stream=True, timeout=(5, 60)) as response:
+            headers = {'Authorization': 'Bearer '+COSY_TOKEN} if COSY_TOKEN else {}
+            with requests.post(COSY+'/speech', json={'text': text}, headers=headers,
+                               stream=True, timeout=(5, 60), allow_redirects=False) as response:
                 response.raise_for_status()
                 for line in response.iter_lines(chunk_size=None):
                     if stop.is_set():
@@ -158,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({'error': 'not ready'}, 503)
         digest = hashlib.sha256(json.dumps([fingerprint, avatar, text], sort_keys=True).encode()).hexdigest()
         cached = CACHE/(digest+'.ndjson.gz')
-        hit = cached.exists()
+        hit = CACHE_ENABLED and cached.exists()
         if not hit and not busy.acquire(False):
             return self.json({'error': 'busy'}, 503)
         pending = CACHE/(digest+'.'+uuid.uuid4().hex+'.tmp')
@@ -208,9 +224,10 @@ class Handler(BaseHTTPRequestHandler):
                             raise RuntimeError('Incomplete MuseTalk window')
                         offset += count
                     event({'type': 'done'})
-                pending.replace(cached)
-                for old in sorted(CACHE.glob('*.ndjson.gz'), key=lambda p: p.stat().st_mtime, reverse=True)[256:]:
-                    old.unlink(missing_ok=True)
+                if CACHE_ENABLED:
+                    pending.replace(cached)
+                    for old in sorted(CACHE.glob('*.ndjson.gz'), key=lambda p: p.stat().st_mtime, reverse=True)[256:]:
+                        old.unlink(missing_ok=True)
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as error:

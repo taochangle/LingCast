@@ -1,8 +1,13 @@
 """Resident CosyVoice3 PCM stream; loopback-only model service."""
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+GPU = os.environ.get('COSYVOICE_GPU', '2')
+MEMORY_FRACTION = float(os.environ.get('COSYVOICE_MEMORY_FRACTION', '0.14'))
+if not 0 < MEMORY_FRACTION <= 1:
+    raise ValueError('COSYVOICE_MEMORY_FRACTION must be greater than 0 and at most 1')
+os.environ['CUDA_VISIBLE_DEVICES'] = GPU
 os.environ['OMP_NUM_THREADS'] = '4'
 import base64
+import hmac
 import json
 import logging
 from pathlib import Path
@@ -12,6 +17,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(os.environ.get('COSYVOICE_ROOT','/data1/taoxin/lingcast-cosyvoice-bench'))
+API_TOKEN = os.environ.get('COSYVOICE_API_TOKEN', '')
 sys.path[:0] = [str(ROOT/'source-pinned'), str(ROOT/'source-pinned/third_party/Matcha-TTS')]
 os.chdir(ROOT/'source-pinned')
 ready = False
@@ -28,7 +34,7 @@ def load():
     try:
         import torch
         torch.set_num_threads(4)
-        torch.cuda.set_per_process_memory_fraction(.14)
+        torch.cuda.set_per_process_memory_fraction(MEMORY_FRACTION)
         from cosyvoice.cli.cosyvoice import AutoModel
         model = AutoModel(model_dir=str(ROOT/'model'), fp16=True)
         # Upstream grows this field across calls, even after warmup. Keep the
@@ -60,7 +66,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/readyz':
-            return self.json(dict(ready=ready, error=failure, gpu=2, model='CosyVoice3-0.5B-2512'))
+            return self.json(dict(ready=ready, error=failure, gpu=int(GPU) if GPU.isdecimal() else GPU, model='CosyVoice3-0.5B-2512'))
         self.json({'error': 'not found'}, 404)
 
     def do_POST(self):
@@ -68,6 +74,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({'error': 'not found'}, 404)
         if self.headers.get('Origin'):
             return self.json({'error': 'server clients only'}, 403)
+        if API_TOKEN and not hmac.compare_digest(
+            self.headers.get('Authorization', '').encode('utf-8'),
+            ('Bearer '+API_TOKEN).encode('utf-8'),
+        ):
+            self.close_connection = True
+            return self.json({'error': 'unauthorized'}, 401)
         try:
             size = int(self.headers.get('Content-Length', '0'))
             if not 0 < size <= 4096:
